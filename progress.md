@@ -41,6 +41,11 @@
 - **Status:** complete
 - Task 9 complete: controls.js, index.html, style.css, main.js. Tests 102/102, build clean, no em/en dashes. Browser check at 390x844 (light, dark, reduced motion): all 12 items pass. Fixed during the check: popover overflowed the right edge by ~7px (measured mid-animation; now uses offsetWidth, regression test added) and the totals line wrapped (nowrap). Note: favicon.ico 404 (harmless).
 - Final review (self-review, no subagents): fixed corrupt-data re-backup on every reload (test added, suite 103/103). Deferred minors: picker Escape/focus + court keyboard access, multi-tab overwrite, favicon 404, corner labels under marks.
+### Change 2: 14 NBA 2K-style hot zones
+
+- **Status:** in_progress
+- Requested by user: 14 zones (5 three, 5 mid, 4 close), left/right separate, angle wedges from the basket, FIBA kept. Scope: Tasks 1, 2, 7.
+- Task 1 redone: classifyZone with 14 zones (restricted r=1.25; 22.5° center wedges; 67.5° elbow/baseline). geometry 39/39. Old-zone-name fixtures in heatmap/state/store/app tests renamed (fixture-only ruling).
 
 ## Test Results
 
@@ -56,6 +61,7 @@
 | shotPicker.test.js | Task 8 | pass | 12/12 | pass |
 | controls.test.js + full suite | Task 9 | pass | 102/102 | pass |
 | full suite after final fix | Final | pass | 103/103 | pass |
+| geometry.test.js (14 zones) | Change 2 Task 1 | pass | 39/39 | pass |
 
 ## Error Log
 

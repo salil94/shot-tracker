@@ -43,10 +43,11 @@
 - Final review (self-review, no subagents): fixed corrupt-data re-backup on every reload (test added, suite 103/103). Deferred minors: picker Escape/focus + court keyboard access, multi-tab overwrite, favicon 404, corner labels under marks.
 ### Change 2: 14 NBA 2K-style hot zones
 
-- **Status:** in_progress
+- **Status:** complete
 - Requested by user: 14 zones (5 three, 5 mid, 4 close), left/right separate, angle wedges from the basket, FIBA kept. Scope: Tasks 1, 2, 7.
 - Task 1 redone: classifyZone with 14 zones (restricted r=1.25; 22.5° center wedges; 67.5° elbow/baseline). geometry 39/39. Old-zone-name fixtures in heatmap/state/store/app tests renamed (fixture-only ruling).
 - Task 2 redone: stats tests cover 14 zones and left/right separation (code unchanged, ZONES-driven). 8/8; verified failing against old geometry.
+- Task 7 redone: render.js draws 14 mirrored wedges (rays at 22.5°/67.5°, restricted circle r=1.25) with 2K-style two-line labels (FG% over made/attempts). Render 10/10, full suite 120/120, build clean. Browser: drawn zones match classifyZone on 79k sampled points (2 sub-mm boundary mismatches); label count line enlarged after the check.
 
 ## Test Results
 
@@ -64,6 +65,7 @@
 | full suite after final fix | Final | pass | 103/103 | pass |
 | geometry.test.js (14 zones) | Change 2 Task 1 | pass | 39/39 | pass |
 | stats.test.js (14 zones) | Change 2 Task 2 | pass | 8/8 | pass |
+| full suite (14 zones) | Change 2 Task 7 | pass | 120/120 | pass |
 
 ## Error Log
 

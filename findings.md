@@ -8,7 +8,7 @@
   `/// <reference types="vitest/config" />`. `environment` can be `node`, `jsdom` or `happy-dom`. jsdom must
   be installed separately (`npm i -D jsdom`). Individual files can opt in with a `// @vitest-environment jsdom` docblock.
 - Local machine: Node v24.18.0, npm 11.16.0.
-- Installed versions: record here after `npm install` in Task 1.
+- Installed versions (Task 1): vite 8.3.3, vitest 5.0.3, jsdom 30.1.2, @fontsource-variable/geist 5.3.0, @fontsource-variable/geist-mono 5.3.0, @phosphor-icons/core 2.1.1.
 
 ## Court geometry (FIBA, metres)
 

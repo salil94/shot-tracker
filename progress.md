@@ -4,7 +4,7 @@
 
 ### Phase 0: Design & Plan
 
-- **Status:** in_progress
+- **Status:** complete
 - Actions taken:
   - Brainstormed with the user: phone-first for their own workouts; tap, then the Make/Miss popover with Undo; current session plus an All-time toggle; 5 combined zones; FIBA dimensions.
   - Wrote and committed the spec.
@@ -17,7 +17,9 @@
 
 ### Phase 1: Foundation
 
-- **Status:** pending
+- **Status:** in_progress
+- Branch: feat/shot-tracker
+- Task 1 complete: project setup, installed deps, court/geometry.js. Tests: geometry 26/26 pass.
 
 ### Phase 2: State & Persistence
 
@@ -35,7 +37,7 @@
 
 | Test | Input | Expected | Actual | Status |
 |------|-------|----------|--------|--------|
-|      |       |          |        |        |
+| geometry.test.js | Task 1 | pass | 26/26 | pass |
 
 ## Error Log
 

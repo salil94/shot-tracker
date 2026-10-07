@@ -40,6 +40,7 @@
 
 - **Status:** complete
 - Task 9 complete: controls.js, index.html, style.css, main.js. Tests 102/102, build clean, no em/en dashes. Browser check at 390x844 (light, dark, reduced motion): all 12 items pass. Fixed during the check: popover overflowed the right edge by ~7px (measured mid-animation; now uses offsetWidth, regression test added) and the totals line wrapped (nowrap). Note: favicon.ico 404 (harmless).
+- Final review (self-review, no subagents): fixed corrupt-data re-backup on every reload (test added, suite 103/103). Deferred minors: picker Escape/focus + court keyboard access, multi-tab overwrite, favicon 404, corner labels under marks.
 
 ## Test Results
 
@@ -54,6 +55,7 @@
 | render.test.js | Task 7 | pass | 7/7 | pass |
 | shotPicker.test.js | Task 8 | pass | 12/12 | pass |
 | controls.test.js + full suite | Task 9 | pass | 102/102 | pass |
+| full suite after final fix | Final | pass | 103/103 | pass |
 
 ## Error Log
 

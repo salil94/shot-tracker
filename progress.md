@@ -38,7 +38,8 @@
 
 ### Phase 4: Shell, Wiring & Verification
 
-- **Status:** pending
+- **Status:** complete
+- Task 9 complete: controls.js, index.html, style.css, main.js. Tests 102/102, build clean, no em/en dashes. Browser check at 390x844 (light, dark, reduced motion): all 12 items pass. Fixed during the check: popover overflowed the right edge by ~7px (measured mid-animation; now uses offsetWidth, regression test added) and the totals line wrapped (nowrap). Note: favicon.ico 404 (harmless).
 
 ## Test Results
 
@@ -52,6 +53,7 @@
 | app.test.js | Task 6 | pass | 9/9 | pass |
 | render.test.js | Task 7 | pass | 7/7 | pass |
 | shotPicker.test.js | Task 8 | pass | 12/12 | pass |
+| controls.test.js + full suite | Task 9 | pass | 102/102 | pass |
 
 ## Error Log
 

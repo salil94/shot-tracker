@@ -32,7 +32,8 @@
 
 ### Phase 3: UI
 
-- **Status:** pending
+- **Status:** in_progress
+- Task 7 complete: court/render.js (zones with data-tone/data-low, hatch pattern, dot/x marks, ghost). Tests: 7/7.
 
 ### Phase 4: Shell, Wiring & Verification
 
@@ -48,6 +49,7 @@
 | state.test.js | Task 4 | pass | 9/9 | pass |
 | store.test.js | Task 5 | pass | 16/16 | pass |
 | app.test.js | Task 6 | pass | 9/9 | pass |
+| render.test.js | Task 7 | pass | 7/7 | pass |
 
 ## Error Log
 

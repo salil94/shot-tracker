@@ -46,6 +46,7 @@
 - **Status:** in_progress
 - Requested by user: 14 zones (5 three, 5 mid, 4 close), left/right separate, angle wedges from the basket, FIBA kept. Scope: Tasks 1, 2, 7.
 - Task 1 redone: classifyZone with 14 zones (restricted r=1.25; 22.5° center wedges; 67.5° elbow/baseline). geometry 39/39. Old-zone-name fixtures in heatmap/state/store/app tests renamed (fixture-only ruling).
+- Task 2 redone: stats tests cover 14 zones and left/right separation (code unchanged, ZONES-driven). 8/8; verified failing against old geometry.
 
 ## Test Results
 
@@ -62,6 +63,7 @@
 | controls.test.js + full suite | Task 9 | pass | 102/102 | pass |
 | full suite after final fix | Final | pass | 103/103 | pass |
 | geometry.test.js (14 zones) | Change 2 Task 1 | pass | 39/39 | pass |
+| stats.test.js (14 zones) | Change 2 Task 2 | pass | 8/8 | pass |
 
 ## Error Log
 

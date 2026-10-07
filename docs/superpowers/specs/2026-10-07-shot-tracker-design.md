@@ -14,7 +14,8 @@ heatmap. Single user, single device, no accounts or sync.
 
 ## Constraints
 
-- Vanilla JS + Vite, no UI framework. Vitest for tests.
+- Vanilla JS + Vite, no UI framework. Vitest for tests. Runtime assets: self-hosted Geist / Geist Mono
+  (Fontsource) and Phosphor icon SVGs (`@phosphor-icons/core`).
 - Persistence: `localStorage` only.
 - Court: **FIBA** dimensions (metres).
 - Primary viewport: portrait phone (~390×844), touch input.
@@ -44,7 +45,7 @@ src/
   court/geometry.js   pure: FIBA constants, classifyZone(x, y) → zone id | null
   court/render.js     builds SVG court + zone paths, draws shot dots, applies heatmap fills
   stats.js            pure: shots[] → { [zone]: { made, attempts, pct } } + totals
-  heatmap.js          pure: (zone, pct, attempts) → { fill, opacity }
+  heatmap.js          pure: (zone, {made, attempts}) → { tone, lowConfidence }
   store.js            localStorage load/save, versioned schema, session operations
   ui/shotPicker.js    Make/Miss popover positioned at tap point
   ui/controls.js      header/totals, Current/All toggle, New session, Undo, banners
@@ -99,16 +100,20 @@ Zone ids: `paint`, `mid`, `corner3`, `wing3`, `top3`.
 
 Single screen, portrait:
 
-- **Header:** session date + **New session** button.
-- **Totals bar:** `made/attempts · pct%` + **Current | All** toggle.
+- **Header:** "Session <date>" + **New session** button.
+- **Totals bar:** `made/attempts · pct%` (mono) + **This session | All time** segmented toggle.
 - **Court:** SVG half-court, basket at top, zones tinted by heatmap, zone labels.
+  Empty current session shows a hint: "Tap where you shot from".
+- **Legend:** Cold to Hot tone scale, Make/Miss mark key, "No shots" hatch, one-line caption.
 - **Bottom bar:** **Undo** (thumb reach).
 
 Interactions:
-- Tap court → ghost dot at tap point + popover with **Make ✓** / **Miss ✗** buttons
-  (≥ 56 px), clamped on-screen. Choosing records the shot; tapping elsewhere cancels.
+- Tap court → ghost dot at tap point + popover with **Make** / **Miss** buttons
+  (Phosphor check / x icons, ≥ 56 px), clamped on-screen. Choosing records the shot;
+  tapping elsewhere cancels.
 - Taps outside the court (`classifyZone` → null) are ignored.
-- Dots: made = filled green, missed = hollow red ring. Hidden in All-time mode.
+- Shot marks are shape-coded, not colour-coded (red/green would collide with the heatmap):
+  made = filled ink dot, missed = ink ×, both with a surface-coloured halo. Hidden in All-time mode.
 - Undo removes the latest shot of the current session; disabled when empty.
 - New session: confirm only if the current session has shots; an empty current session
   is reused rather than creating another.
@@ -116,16 +121,32 @@ Interactions:
 
 ### Heatmap colour
 
-Per-zone fill on a cold→hot scale, interpolated between anchors:
+Per-zone fill on a **diverging blue↔red scale with a neutral grey midpoint**, binned into 7 tones
+(`c3 c2 c1 n h1 h2 h3`), positioned between anchors:
 
 | Zone type | Cold at | Hot at |
 |---|---|---|
 | 2pt (paint, mid) | ≤ 30% | ≥ 60% |
 | 3pt (corner3, wing3, top3) | ≤ 20% | ≥ 45% |
 
-- 0 attempts → neutral grey.
-- 1–2 attempts → computed colour at 35% opacity (low confidence).
+- 0 attempts → diagonal hatch (so "no data" never reads as "average").
+- 1–2 attempts → tone at 35% fill-opacity (low confidence).
 - ≥ 3 attempts → full opacity.
+- Tone colours are CSS tokens with separately chosen light and dark steps (values in the plan's
+  Global Constraints). Lightness changes steadily on each side and the two sides mirror; the
+  poles' colourblind ΔE is ≈ 19.
+
+## Visual design
+
+Design read: a single-screen phone utility for a solo player mid-workout, with a sporty-utilitarian,
+high-contrast look, built on native CSS tokens + Geist/Geist Mono + Phosphor icons.
+Dials: variance 3, motion 3, density 5.
+
+- Zinc neutrals; one accent (emerald) for the Make button and focus rings only.
+- One 12 px radius for all controls and panels.
+- Light and dark themes follow `prefers-color-scheme`; every UI text pair is ≥ 4.5:1.
+- Motion is feedback only (button press, popover entrance) and disabled under reduced motion.
+- Copy: no em/en dashes, no emoji or glyph icons.
 
 ## Persistence & error handling
 
@@ -143,7 +164,7 @@ Vitest, test-first, for pure modules:
 - **geometry:** paint edges, point exactly on the arc, corner/arc break at y≈1.415,
   22.5° top/wing boundary, out-of-bounds, on-the-line = two.
 - **stats:** empty, single zone, all zones, pct rounding, totals.
-- **heatmap:** anchor clamping for 2pt vs 3pt, opacity rule, grey for empty.
+- **heatmap:** anchor clamping for 2pt vs 3pt, tone bins, low-confidence rule, empty = hatch.
 - **store:** save/load round-trip, corrupt-data backup + recovery, in-memory fallback
   when `setItem` throws, empty-session reuse, undo.
 

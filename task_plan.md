@@ -26,6 +26,7 @@ Phase 0 (awaiting plan review)
 - [x] Write the spec
 - [x] Context7 lookups for Vite and Vitest setup (see findings.md)
 - [x] Write the detailed implementation plan
+- [x] Apply design-taste-frontend + dataviz to the court/UI styling (Tasks 3, 7, 8, 9 revised)
 - [ ] User reviews the plan
 - **Status:** in_progress
 
@@ -76,6 +77,10 @@ Phase 0 (awaiting plan review)
 | Hand-written scaffold instead of `create-vite` | The repo already has `docs/`, and create-vite prompts when a folder isn't empty |
 | jsdom per file via `// @vitest-environment jsdom` | Pure modules stay on the fast Node environment |
 | Full-screen backdrop behind the picker | A tap outside cancels without starting a new shot |
+| Diverging blue↔red 7-bin heatmap, grey midpoint, hatch for empty | dataviz: no hue at the midpoint; "no data" must not look like "average" |
+| Make/miss shown by shape (dot / ×), not colour | Red/green would collide with the heat tones |
+| Geist + Geist Mono (Fontsource), Phosphor bold icons via ?raw | design-taste: no Inter default, no glyph/emoji icons, no hand-drawn SVG icons |
+| Zinc neutrals, single emerald accent, 12px radius, reduced-motion-safe feedback motion | design-taste: colour/shape locks, motion dial 3 |
 
 ## Errors Encountered
 

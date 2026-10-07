@@ -8,17 +8,27 @@
 
 **Architecture:** Inline SVG court in metre coordinates (viewBox = court, origin at basket centre, so no transform math). All logic lives in pure modules (`geometry`, `stats`, `heatmap`, `state`, `store`, `app`) that are unit-tested in Node. Thin DOM modules (`render`, `shotPicker`, `controls`) are tested with jsdom, and `main.js` only wires them together. Data flow: action → pure state update → save → notify subscribers → render.
 
-**Tech Stack:** Vite (Node ≥ 20.19 / 22.12; machine has v24.18), Vitest, jsdom (per-file `// @vitest-environment jsdom`), no runtime dependencies.
+**Tech Stack:** Vite (Node ≥ 20.19 / 22.12; machine has v24.18), Vitest, jsdom (per-file `// @vitest-environment jsdom`). Runtime assets only: `@fontsource-variable/geist` + `@fontsource-variable/geist-mono` (self-hosted fonts) and `@phosphor-icons/core` (icon SVGs imported with `?raw`).
+
+**Visual design (design-taste-frontend + dataviz):**
+- *Design read:* a single-screen phone utility for a solo player mid-workout, with a sporty-utilitarian, high-contrast look, built on native CSS tokens + Geist/Geist Mono + Phosphor icons.
+- *Dials:* `DESIGN_VARIANCE 3` (the court is a fixed, symmetric centrepiece), `MOTION_INTENSITY 3` (feedback only: button press, popover entrance, zone colour change; all off under reduced motion), `VISUAL_DENSITY 5`.
+- *Colour roles:* zinc neutrals, with **one accent (emerald)** used only for the Make button and focus rings. The heatmap is a **diverging blue↔red scale with a grey midpoint**, in 7 bins (3 per side). Made/miss is shown by **shape, not colour**: a filled ink dot for a make, an ink × for a miss, both with a 2 px surface halo. Empty zones are **hatched**, so "no data" never looks like "average".
+- *Shape lock:* 12 px radius on every control and panel. The segmented toggle's inner buttons are square inside a 12 px clipped container.
+- *Copy:* no em/en dashes, no emoji or text glyph icons (Phosphor only), at most one middle dot per line.
 
 **Spec:** `docs/superpowers/specs/2026-10-07-shot-tracker-design.md`
 
 ## Global Constraints
 
-- Vanilla JS ES modules + Vite. No UI framework, no runtime dependencies.
+- Vanilla JS ES modules + Vite. No UI framework. Runtime packages are limited to the two Fontsource fonts and `@phosphor-icons/core`.
 - FIBA court in metres. Origin = basket centre, +y toward half-court, baseline y = −1.575, half-court line y = 12.425, x ∈ [−7.5, 7.5].
 - Paint 4.9 m wide × 5.8 m from baseline. 3pt arc radius 6.75. Corner lines at |x| = 6.6. Corner/arc break y = √(6.75² − 6.6²) ≈ 1.415.
 - Zone ids exactly: `paint`, `mid`, `corner3`, `wing3`, `top3`. A shot on the 3pt line counts as 2. Top/wing split at 22.5° from straight-on.
-- Heatmap anchors: 2pt cold ≤ 30% / hot ≥ 60%; 3pt cold ≤ 20% / hot ≥ 45%. 0 attempts = grey; 1–2 attempts = 35% opacity.
+- Heatmap anchors: 2pt cold ≤ 30% / hot ≥ 60%; 3pt cold ≤ 20% / hot ≥ 45%. 7 diverging bins `c3 c2 c1 n h1 h2 h3`. 0 attempts = hatched; 1–2 attempts = 35% fill-opacity.
+- Heat tokens (validated in OKLCH: lightness changes steadily on each side and the two sides mirror; the poles' colourblind ΔE is ≈ 19):
+  - light `c3 #1c5cab  c2 #5598e7  c1 #9ec5f4  n #f0efec  h1 #f3ada7  h2 #e06e68  h3 #a1302f`
+  - dark  `c3 #5598e7  c2 #2a78d6  c1 #1c5cab  n #383835  h1 #a1302f  h2 #ca4442  h3 #e06e68`
 - localStorage key `shot-tracker:v1`, schema `version: 1`. Corrupt data is backed up to `shot-tracker:corrupt-<timestamp>`.
 - Popover buttons ≥ 56 px. Primary viewport 390×844 portrait.
 - Out of scope: export, trends, session history list, PWA, left/right split.
@@ -49,7 +59,7 @@ src/
   court/geometry.js     COURT constants, ZONES, THREE_POINT_ZONES, isInBounds, isThree, classifyZone
   court/render.js       zonePaths, courtLinePaths, LABEL_ANCHORS, createCourt
   stats.js              pct, zoneStats, totals, formatStat
-  heatmap.js            ANCHORS, heatT, heatColor, zoneFill
+  heatmap.js            ANCHORS, TONES, heatT, heatTone, zoneTone
   state.js              SCHEMA_VERSION, newSession, createState, currentSession, addShot, undoLastShot, startNewSession, allShots
   store.js              STORAGE_KEY, CORRUPT_PREFIX, isValidState, migrate, load, save
   app.js                createApp: state + view + persistence + subscribers
@@ -115,7 +125,8 @@ dist
 - [ ] **Step 2: Install dev dependencies**
 
 Run: `npm install -D vite vitest jsdom`
-Expected: `package.json` gains `devDependencies` for all three, and `package-lock.json` is created. Record the installed versions in `findings.md`.
+Run: `npm install @fontsource-variable/geist @fontsource-variable/geist-mono @phosphor-icons/core`
+Expected: `package.json` has `devDependencies` (vite, vitest, jsdom) and `dependencies` (the two fonts and Phosphor core), and `package-lock.json` is created. Record the installed versions in `findings.md`. The versions verified on 2026-10-07 were Geist 5.3.0, Geist Mono 5.3.0 and Phosphor core 2.1.1, which ships `regular/*.svg` and `bold/*.svg` exports.
 
 - [ ] **Step 3: Write the failing test** — `tests/geometry.test.js`
 
@@ -398,7 +409,7 @@ git commit -m "feat: per-zone and total FG% stats"
 
 ---
 
-### Task 3: Heatmap colour scale
+### Task 3: Heatmap tone scale (diverging, binned)
 
 **Files:**
 - Create: `src/heatmap.js`
@@ -406,13 +417,14 @@ git commit -m "feat: per-zone and total FG% stats"
 
 **Interfaces:**
 - Consumes: `THREE_POINT_ZONES` from `src/court/geometry.js`
-- Produces: `ANCHORS`, `EMPTY_FILL = '#d1d5db'`, `MIN_CONFIDENT_ATTEMPTS = 3`, `LOW_CONFIDENCE_OPACITY = 0.35`, `heatT(zone, ratio): number` in [0, 1], `heatColor(t): 'rgb(r, g, b)'`, `zoneFill(zone, { made, attempts }): { fill: string, opacity: number }`
+- Produces: `ANCHORS`, `TONES = ['c3','c2','c1','n','h1','h2','h3']`, `MIN_CONFIDENT_ATTEMPTS = 3`, `heatT(zone, ratio): number` in [0, 1], `heatTone(zone, ratio): Tone`, `zoneTone(zone, { made, attempts }): { tone: Tone | 'empty', lowConfidence: boolean }`.
+- The module returns **tone names, not colours**. Colours live in CSS tokens (`--heat-c3` … `--heat-h3`) so light and dark mode each get their own validated steps (dataviz rule: dark mode is selected, not flipped).
 
 - [ ] **Step 1: Write the failing test** — `tests/heatmap.test.js`
 
 ```js
 import { describe, it, expect } from 'vitest';
-import { heatT, heatColor, zoneFill, EMPTY_FILL, LOW_CONFIDENCE_OPACITY } from '../src/heatmap.js';
+import { heatT, heatTone, zoneTone, TONES } from '../src/heatmap.js';
 
 describe('heatT', () => {
   it('uses 30%→60% anchors for 2pt zones', () => {
@@ -431,33 +443,35 @@ describe('heatT', () => {
     expect(heatT('top3', 0)).toBe(0);
     expect(heatT('top3', 1)).toBe(1);
   });
-  it('rates 40% from three hotter than 40% in the paint', () => {
-    expect(heatT('top3', 0.4)).toBeGreaterThan(heatT('paint', 0.4));
+});
+
+describe('heatTone', () => {
+  it('has three cold bins, a neutral midpoint, and three hot bins', () => {
+    expect(TONES).toEqual(['c3', 'c2', 'c1', 'n', 'h1', 'h2', 'h3']);
+  });
+  it('maps anchors to the ends and the midpoint to neutral', () => {
+    expect(heatTone('paint', 0.3)).toBe('c3');
+    expect(heatTone('mid', 0.45)).toBe('n');
+    expect(heatTone('paint', 0.6)).toBe('h3');
+    expect(heatTone('top3', 0.2)).toBe('c3');
+    expect(heatTone('top3', 0.45)).toBe('h3');
+  });
+  it('rates 40% from three as hot and 40% in the paint as cold', () => {
+    expect(heatTone('top3', 0.4)).toBe('h2');
+    expect(heatTone('paint', 0.4)).toBe('c1');
   });
 });
 
-describe('heatColor', () => {
-  it('runs blue → yellow → red', () => {
-    expect(heatColor(0)).toBe('rgb(59, 130, 246)');
-    expect(heatColor(0.5)).toBe('rgb(250, 204, 21)');
-    expect(heatColor(1)).toBe('rgb(239, 68, 68)');
-    expect(heatColor(0.25)).toBe('rgb(155, 167, 134)');
+describe('zoneTone', () => {
+  it('is empty (hatched) with no attempts, never the neutral tone', () => {
+    expect(zoneTone('paint', { made: 0, attempts: 0 })).toEqual({ tone: 'empty', lowConfidence: false });
   });
-});
-
-describe('zoneFill', () => {
-  it('is neutral grey with no attempts', () => {
-    expect(zoneFill('paint', { made: 0, attempts: 0 })).toEqual({ fill: EMPTY_FILL, opacity: 1 });
+  it('flags low confidence below 3 attempts', () => {
+    expect(zoneTone('paint', { made: 1, attempts: 1 })).toEqual({ tone: 'h3', lowConfidence: true });
+    expect(zoneTone('paint', { made: 1, attempts: 2 }).lowConfidence).toBe(true);
   });
-  it('is faded below 3 attempts', () => {
-    expect(zoneFill('paint', { made: 1, attempts: 1 })).toEqual({
-      fill: 'rgb(239, 68, 68)',
-      opacity: LOW_CONFIDENCE_OPACITY,
-    });
-    expect(zoneFill('paint', { made: 1, attempts: 2 }).opacity).toBe(LOW_CONFIDENCE_OPACITY);
-  });
-  it('is fully opaque from 3 attempts', () => {
-    expect(zoneFill('top3', { made: 0, attempts: 3 })).toEqual({ fill: 'rgb(59, 130, 246)', opacity: 1 });
+  it('is confident from 3 attempts', () => {
+    expect(zoneTone('top3', { made: 0, attempts: 3 })).toEqual({ tone: 'c3', lowConfidence: false });
   });
 });
 ```
@@ -477,15 +491,10 @@ export const ANCHORS = {
   two: { cold: 0.3, hot: 0.6 },
   three: { cold: 0.2, hot: 0.45 },
 };
-export const EMPTY_FILL = '#d1d5db';
-export const MIN_CONFIDENT_ATTEMPTS = 3;
-export const LOW_CONFIDENCE_OPACITY = 0.35;
 
-const STOPS = [
-  [59, 130, 246], // cold: blue
-  [250, 204, 21], // average: yellow
-  [239, 68, 68], // hot: red
-];
+// Diverging bins: cold arm, neutral midpoint, hot arm. Colours are CSS tokens (--heat-<tone>).
+export const TONES = ['c3', 'c2', 'c1', 'n', 'h1', 'h2', 'h3'];
+export const MIN_CONFIDENT_ATTEMPTS = 3;
 
 const clamp01 = (n) => Math.min(1, Math.max(0, n));
 
@@ -494,20 +503,13 @@ export function heatT(zone, ratio) {
   return clamp01((ratio - cold) / (hot - cold));
 }
 
-export function heatColor(t) {
-  const scaled = clamp01(t) * (STOPS.length - 1);
-  const i = Math.min(Math.floor(scaled), STOPS.length - 2);
-  const local = scaled - i;
-  const [r, g, b] = STOPS[i].map((c, k) => Math.round(c + (STOPS[i + 1][k] - c) * local));
-  return `rgb(${r}, ${g}, ${b})`;
+export function heatTone(zone, ratio) {
+  return TONES[Math.round(heatT(zone, ratio) * (TONES.length - 1))];
 }
 
-export function zoneFill(zone, { made, attempts }) {
-  if (attempts === 0) return { fill: EMPTY_FILL, opacity: 1 };
-  return {
-    fill: heatColor(heatT(zone, made / attempts)),
-    opacity: attempts < MIN_CONFIDENT_ATTEMPTS ? LOW_CONFIDENCE_OPACITY : 1,
-  };
+export function zoneTone(zone, { made, attempts }) {
+  if (attempts === 0) return { tone: 'empty', lowConfidence: false };
+  return { tone: heatTone(zone, made / attempts), lowConfidence: attempts < MIN_CONFIDENT_ATTEMPTS };
 }
 ```
 
@@ -520,7 +522,7 @@ Expected: PASS.
 
 ```bash
 git add src/heatmap.js tests/heatmap.test.js
-git commit -m "feat: heatmap colour scale with 2pt/3pt anchors"
+git commit -m "feat: diverging heatmap tone bins with 2pt/3pt anchors"
 ```
 
 ---
@@ -1139,14 +1141,16 @@ git commit -m "feat: app controller with immediate persistence"
 - Test: `tests/render.test.js`
 
 **Interfaces:**
-- Consumes: `COURT`, `ZONES`, `classifyZone` (geometry), `zoneFill` (heatmap), `formatStat` (stats)
+- Consumes: `COURT`, `ZONES`, `classifyZone` (geometry), `zoneTone` (heatmap), `formatStat` (stats)
 - Produces:
   - `zonePaths(): { [zone]: string }`, SVG path data in court metres. `mid` uses `fill-rule="evenodd"` with the paint as a hole.
   - `courtLinePaths(): string[]`
   - `LABEL_ANCHORS: { [zone]: Array<{ x, y, rotate? }> }`
   - `createCourt(container): { svg, setZones(zoneStats), setDots(shots), setGhost({x,y}|null), clientToCourt(clientX, clientY): {x,y} }`. `clientToCourt` returns `{NaN, NaN}` if the SVG has no screen CTM, and `classifyZone` rejects that.
+- Zone colour contract with CSS (Task 9): every zone path carries `data-tone="c3|c2|c1|n|h1|h2|h3|empty"` and, when there are fewer than 3 attempts, a boolean `data-low` attribute. CSS maps tones to `--heat-*` tokens. `empty` fills with the `#no-data` hatch pattern defined in this SVG.
+- Shot marks are encoded by **shape**: a make is `<circle class="dot made">`, and a miss is `<g class="dot miss">` holding two paths (`.halo`, `.ink`) that draw an ×.
 
-SVG facts: `viewBox="-7.5 -1.575 15 14"`, so court coordinates and SVG user units are the same thing and the baseline sits at the top of the screen. The layers, from bottom to top, are zones, lines, labels, dots, then ghost. Everything except the zones has `pointer-events: none` (set in CSS, Task 9).
+SVG facts: `viewBox="-7.5 -1.575 15 14"`, so court coordinates and SVG user units are the same thing and the baseline sits at the top of the screen. The layers, from bottom to top, are defs, zones, lines, labels, dots, then ghost. Everything except the zones has `pointer-events: none` (set in CSS, Task 9).
 
 - [ ] **Step 1: Write the failing test** — `tests/render.test.js`
 
@@ -1156,7 +1160,6 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { createCourt, zonePaths, LABEL_ANCHORS } from '../src/court/render.js';
 import { ZONES, classifyZone } from '../src/court/geometry.js';
 import { zoneStats } from '../src/stats.js';
-import { EMPTY_FILL } from '../src/heatmap.js';
 
 const shot = (x, y, zone, made) => ({ x, y, zone, made, t: 0 });
 
@@ -1182,34 +1185,52 @@ describe('LABEL_ANCHORS', () => {
 describe('createCourt', () => {
   let container;
   let court;
+  const zoneEl = (z) => court.svg.querySelector(`[data-zone="${z}"]`);
+
   beforeEach(() => {
     document.body.innerHTML = '<main id="court"></main>';
     container = document.getElementById('court');
     court = createCourt(container);
   });
 
-  it('renders one svg with a path per zone', () => {
+  it('renders one svg with a path per zone and a no-data pattern', () => {
     expect(container.querySelectorAll('svg')).toHaveLength(1);
     expect(court.svg.getAttribute('viewBox')).toBe('-7.5 -1.575 15 14');
     const zones = [...court.svg.querySelectorAll('[data-zone]')].map((n) => n.getAttribute('data-zone'));
     expect(zones).toEqual(ZONES);
+    expect(court.svg.querySelector('pattern#no-data')).not.toBeNull();
   });
 
-  it('colours zones and labels from stats', () => {
-    court.setZones(zoneStats([shot(0, 0, 'paint', true), shot(0, 0, 'paint', true), shot(0, 0, 'paint', true)]));
-    const paint = court.svg.querySelector('[data-zone="paint"]');
-    const top = court.svg.querySelector('[data-zone="top3"]');
-    expect(paint.getAttribute('fill')).toBe('rgb(239, 68, 68)');
-    expect(paint.getAttribute('fill-opacity')).toBe('1');
-    expect(top.getAttribute('fill')).toBe(EMPTY_FILL);
+  it('tags zones with tone and confidence from stats', () => {
+    court.setZones(
+      zoneStats([
+        shot(0, 0, 'paint', true),
+        shot(0, 0, 'paint', true),
+        shot(0, 0, 'paint', true),
+        shot(4.5, 1.6, 'mid', false),
+      ]),
+    );
+    expect(zoneEl('paint').getAttribute('data-tone')).toBe('h3');
+    expect(zoneEl('paint').hasAttribute('data-low')).toBe(false);
+    expect(zoneEl('mid').getAttribute('data-tone')).toBe('c3');
+    expect(zoneEl('mid').hasAttribute('data-low')).toBe(true);
+    expect(zoneEl('top3').getAttribute('data-tone')).toBe('empty');
     const labels = [...court.svg.querySelectorAll('.labels text')].map((t) => t.textContent);
     expect(labels).toContain('3/3 · 100%');
   });
 
-  it('draws made and missed dots, and clears them', () => {
+  it('clears low confidence once a zone reaches 3 attempts', () => {
+    court.setZones(zoneStats([shot(0, 0, 'paint', true)]));
+    court.setZones(zoneStats([shot(0, 0, 'paint', true), shot(0, 0, 'paint', true), shot(0, 0, 'paint', true)]));
+    expect(zoneEl('paint').hasAttribute('data-low')).toBe(false);
+  });
+
+  it('draws makes as dots and misses as crosses, and clears them', () => {
     court.setDots([shot(0, 0, 'paint', true), shot(0, 8, 'top3', false)]);
-    expect(court.svg.querySelectorAll('.dot.made')).toHaveLength(1);
-    expect(court.svg.querySelectorAll('.dot.miss')).toHaveLength(1);
+    expect(court.svg.querySelectorAll('circle.dot.made')).toHaveLength(1);
+    const miss = court.svg.querySelectorAll('g.dot.miss');
+    expect(miss).toHaveLength(1);
+    expect(miss[0].querySelectorAll('path')).toHaveLength(2);
     court.setDots([]);
     expect(court.svg.querySelectorAll('.dot')).toHaveLength(0);
   });
@@ -1234,11 +1255,12 @@ Expected: FAIL, `src/court/render.js` isn't found.
 
 ```js
 import { COURT, ZONES } from './geometry.js';
-import { zoneFill } from '../heatmap.js';
+import { zoneTone } from '../heatmap.js';
 import { formatStat } from '../stats.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const r4 = (n) => Number(n.toFixed(4));
+const MISS_ARM = 0.2; // half-length of each stroke in the miss ×, metres
 
 // Where each zone's stat label sits (court metres). Corner labels run vertically
 // along the sideline because the corner strip is only 0.9 m wide.
@@ -1289,6 +1311,31 @@ function el(name, attrs = {}) {
   return node;
 }
 
+// Diagonal hatch = "no shots yet". Kept distinct from the neutral midpoint tone.
+function noDataPattern() {
+  const pattern = el('pattern', {
+    id: 'no-data',
+    width: 0.35,
+    height: 0.35,
+    patternUnits: 'userSpaceOnUse',
+    patternTransform: 'rotate(45)',
+  });
+  pattern.append(
+    el('rect', { width: 0.35, height: 0.35, class: 'hatch-bg' }),
+    el('line', { x1: 0, y1: 0, x2: 0, y2: 0.35, class: 'hatch-line' }),
+  );
+  return pattern;
+}
+
+function shotMark(s) {
+  if (s.made) return el('circle', { cx: s.x, cy: s.y, r: 0.2, class: 'dot made' });
+  const k = MISS_ARM;
+  const d = `M ${s.x - k} ${s.y - k} L ${s.x + k} ${s.y + k} M ${s.x + k} ${s.y - k} L ${s.x - k} ${s.y + k}`;
+  const g = el('g', { class: 'dot miss' });
+  g.append(el('path', { d, class: 'halo' }), el('path', { d, class: 'ink' }));
+  return g;
+}
+
 export function createCourt(container) {
   const { halfWidth: W, baselineY: B, halfCourtY: H } = COURT;
   const svg = el('svg', {
@@ -1297,6 +1344,8 @@ export function createCourt(container) {
     role: 'img',
     'aria-label': 'Half court. Tap where the shot was taken.',
   });
+  const defs = el('defs');
+  defs.append(noDataPattern());
   const zonesG = el('g', { class: 'zones' });
   const linesG = el('g', { class: 'lines' });
   const labelsG = el('g', { class: 'labels' });
@@ -1307,7 +1356,13 @@ export function createCourt(container) {
   const zoneEls = {};
   const labelEls = {};
   for (const zone of ZONES) {
-    zoneEls[zone] = el('path', { d: paths[zone], class: 'zone', 'fill-rule': 'evenodd', 'data-zone': zone });
+    zoneEls[zone] = el('path', {
+      d: paths[zone],
+      class: 'zone',
+      'fill-rule': 'evenodd',
+      'data-zone': zone,
+      'data-tone': 'empty',
+    });
     zonesG.append(zoneEls[zone]);
     labelEls[zone] = LABEL_ANCHORS[zone].map(({ x, y, rotate }) => {
       const text = el('text', {
@@ -1330,23 +1385,21 @@ export function createCourt(container) {
     el('circle', { cx: 0, cy: 0, r: COURT.rimRadius }),
   );
 
-  svg.append(zonesG, linesG, labelsG, dotsG, ghost);
+  svg.append(defs, zonesG, linesG, labelsG, dotsG, ghost);
   container.append(svg);
 
   return {
     svg,
     setZones(stats) {
       for (const zone of ZONES) {
-        const { fill, opacity } = zoneFill(zone, stats[zone]);
-        zoneEls[zone].setAttribute('fill', fill);
-        zoneEls[zone].setAttribute('fill-opacity', String(opacity));
+        const { tone, lowConfidence } = zoneTone(zone, stats[zone]);
+        zoneEls[zone].setAttribute('data-tone', tone);
+        zoneEls[zone].toggleAttribute('data-low', lowConfidence);
         for (const t of labelEls[zone]) t.textContent = formatStat(stats[zone]);
       }
     },
     setDots(shots) {
-      dotsG.replaceChildren(
-        ...shots.map((s) => el('circle', { cx: s.x, cy: s.y, r: 0.22, class: s.made ? 'dot made' : 'dot miss' })),
-      );
+      dotsG.replaceChildren(...shots.map(shotMark));
     },
     setGhost(point) {
       if (!point) {
@@ -1376,7 +1429,7 @@ Expected: PASS.
 
 ```bash
 git add src/court/render.js tests/render.test.js
-git commit -m "feat: SVG half-court renderer with heatmap zones and shot dots"
+git commit -m "feat: SVG half-court with tone-tagged zones and shape-coded shot marks"
 ```
 
 ---
@@ -1388,9 +1441,11 @@ git commit -m "feat: SVG half-court renderer with heatmap zones and shot dots"
 - Test: `tests/shotPicker.test.js`
 
 **Interfaces:**
+- Consumes: Phosphor bold icons through Vite `?raw` imports (`@phosphor-icons/core/bold/check-bold.svg?raw`, `.../x-bold.svg?raw`). Bold files carry the `-bold` suffix, as verified in package 2.1.1.
 - Produces:
   - `placePopover(tap: {x, y}, size: {width, height}, viewport: {vw, vh}, margin = 8, offset = 16): { left, top }`. Places the popover centred above the tap. If that won't fit it goes below the tap, and it is always clamped inside the viewport.
   - `createShotPicker(root = document.body): { open({clientX, clientY}, onChoose(made: boolean), onCancel()), close(), isOpen(): boolean, element }`. A full-screen transparent backdrop blocks court taps while the picker is open, and tapping the backdrop cancels. Each `open` resolves **at most once**.
+- Buttons: `.make` (accent, check icon, label "Make") and `.miss` (neutral, x icon, label "Miss"). Each is at least 56 px tall (CSS, Task 9).
 
 - [ ] **Step 1: Write the failing test** — `tests/shotPicker.test.js`
 
@@ -1439,6 +1494,12 @@ describe('createShotPicker', () => {
     picker.open({ clientX: 100, clientY: 100 }, onChoose, onCancel);
     expect(picker.element.hidden).toBe(false);
     expect(picker.isOpen()).toBe(true);
+  });
+
+  it('labels buttons with text plus a decorative icon', () => {
+    expect(button('make').textContent.trim()).toBe('Make');
+    expect(button('miss').textContent.trim()).toBe('Miss');
+    expect(button('make').querySelector('.icon[aria-hidden="true"] svg')).not.toBeNull();
   });
 
   it('reports Make as true and closes', () => {
@@ -1492,6 +1553,9 @@ Expected: FAIL, `src/ui/shotPicker.js` isn't found.
 - [ ] **Step 3: Write the implementation** — `src/ui/shotPicker.js`
 
 ```js
+import checkIcon from '@phosphor-icons/core/bold/check-bold.svg?raw';
+import xIcon from '@phosphor-icons/core/bold/x-bold.svg?raw';
+
 const clamp = (n, lo, hi) => Math.min(Math.max(n, lo), Math.max(lo, hi));
 
 export function placePopover(tap, size, viewport, margin = 8, offset = 16) {
@@ -1502,11 +1566,11 @@ export function placePopover(tap, size, viewport, margin = 8, offset = 16) {
   return { left, top };
 }
 
-function makeButton(label, className) {
+function makeButton(label, className, icon) {
   const b = document.createElement('button');
   b.type = 'button';
   b.className = className;
-  b.textContent = label;
+  b.innerHTML = `<span class="icon" aria-hidden="true">${icon}</span><span>${label}</span>`;
   return b;
 }
 
@@ -1518,8 +1582,8 @@ export function createShotPicker(root = document.body) {
   panel.className = 'picker';
   panel.setAttribute('role', 'dialog');
   panel.setAttribute('aria-label', 'Log shot');
-  const make = makeButton('Make ✓', 'make');
-  const miss = makeButton('Miss ✗', 'miss');
+  const make = makeButton('Make', 'make', checkIcon);
+  const miss = makeButton('Miss', 'miss', xIcon);
   panel.append(make, miss);
   backdrop.append(panel);
   root.append(backdrop);
@@ -1568,7 +1632,7 @@ export function createShotPicker(root = document.body) {
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run tests/shotPicker.test.js`
-Expected: PASS.
+Expected: PASS. If Vitest cannot resolve the `?raw` import, check `node_modules/@phosphor-icons/core/package.json` `exports` for `./bold/*.svg` and log the result in `task_plan.md` Errors. Do not hand-draw icons as a fallback.
 
 - [ ] **Step 5: Commit**
 
@@ -1579,7 +1643,7 @@ git commit -m "feat: Make/Miss picker with edge-safe placement and single resolu
 
 ---
 
-### Task 9: Controls, page shell, wiring, and manual verification
+### Task 9: Controls, page shell, styling, wiring, and verification
 
 **Files:**
 - Create: `src/ui/controls.js`, `index.html`, `src/style.css`, `src/main.js`
@@ -1587,7 +1651,7 @@ git commit -m "feat: Make/Miss picker with edge-safe placement and single resolu
 
 **Interfaces:**
 - Consumes: everything above. `createControls` reads the element ids defined in `index.html`.
-- Produces: `BANNER_TEXT`, `formatDate(ts): string`, `createControls(doc, { onNewSession, onUndo, onViewChange, onDismissBanner }): { update(snapshot) }`
+- Produces: `BANNER_TEXT`, `formatDate(ts): string`, `createControls(doc, { onNewSession, onUndo, onViewChange, onDismissBanner }): { update(snapshot) }`. `update` also shows the empty-state hint (`#hint`) only while viewing an empty current session.
 
 - [ ] **Step 1: Write the failing test** — `tests/controls.test.js`
 
@@ -1603,12 +1667,14 @@ const SHELL = `
   <div id="totals"></div>
   <button data-view="current" aria-pressed="true"></button>
   <button data-view="all" aria-pressed="false"></button>
+  <p id="hint" hidden></p>
   <button id="undo"></button>`;
 
 const snapshot = (over = {}) => ({
   view: 'current',
   warning: null,
   session: { id: 's', startedAt: T0, shots: [] },
+  shots: [],
   totals: { made: 0, attempts: 0, pct: null },
   canUndo: false,
   ...over,
@@ -1626,7 +1692,9 @@ describe('createControls', () => {
   });
 
   it('renders date, totals, view and undo state', () => {
-    controls.update(snapshot({ view: 'all', totals: { made: 7, attempts: 12, pct: 58 }, canUndo: true }));
+    controls.update(
+      snapshot({ view: 'all', shots: [{}], totals: { made: 7, attempts: 12, pct: 58 }, canUndo: true }),
+    );
     expect($('#session-date').textContent).toBe(formatDate(T0));
     expect($('#totals').textContent).toBe('7/12 · 58%');
     expect($('[data-view="all"]').getAttribute('aria-pressed')).toBe('true');
@@ -1639,12 +1707,25 @@ describe('createControls', () => {
     expect($('#undo').disabled).toBe(true);
   });
 
+  it('shows the empty-state hint only for an empty current session', () => {
+    controls.update(snapshot());
+    expect($('#hint').hidden).toBe(false);
+    controls.update(snapshot({ shots: [{}] }));
+    expect($('#hint').hidden).toBe(true);
+    controls.update(snapshot({ view: 'all' }));
+    expect($('#hint').hidden).toBe(true);
+  });
+
   it('shows and hides the banner', () => {
     controls.update(snapshot({ warning: 'unavailable' }));
     expect($('#banner').hidden).toBe(false);
     expect($('#banner-text').textContent).toBe(BANNER_TEXT.unavailable);
     controls.update(snapshot());
     expect($('#banner').hidden).toBe(true);
+  });
+
+  it('uses plain punctuation in user-facing copy (no em or en dashes)', () => {
+    for (const text of Object.values(BANNER_TEXT)) expect(text).not.toMatch(/[–—]/);
   });
 
   it('forwards clicks to handlers', () => {
@@ -1671,8 +1752,8 @@ Expected: FAIL, `src/ui/controls.js` isn't found.
 import { formatStat } from '../stats.js';
 
 export const BANNER_TEXT = {
-  corrupt: 'Saved data was unreadable. It was backed up and a fresh start was made.',
-  unavailable: 'Not saving: storage unavailable.',
+  corrupt: 'Saved data was unreadable, so it was backed up and a fresh start was made.',
+  unavailable: 'Not saving: storage is unavailable in this browser.',
 };
 
 export function formatDate(ts) {
@@ -1686,6 +1767,7 @@ export function createControls(doc, { onNewSession, onUndo, onViewChange, onDism
   const undoBtn = $('undo');
   const banner = $('banner');
   const bannerText = $('banner-text');
+  const hint = $('hint');
   const viewBtns = [...doc.querySelectorAll('[data-view]')];
 
   $('new-session').addEventListener('click', () => onNewSession());
@@ -1699,6 +1781,7 @@ export function createControls(doc, { onNewSession, onUndo, onViewChange, onDism
       totalsEl.textContent = formatStat(snap.totals);
       for (const b of viewBtns) b.setAttribute('aria-pressed', String(b.dataset.view === snap.view));
       undoBtn.disabled = !snap.canUndo;
+      hint.hidden = !(snap.view === 'current' && snap.shots.length === 0);
       banner.hidden = !snap.warning;
       bannerText.textContent = snap.warning ? BANNER_TEXT[snap.warning] : '';
     },
@@ -1713,38 +1796,61 @@ Expected: PASS.
 
 - [ ] **Step 5: Write the page shell** — `index.html`
 
+Icons are placeholders (`<span class="icon">`) that `main.js` fills with Phosphor SVGs. The legend is required by dataviz: a scale for the diverging tones, a key for the make/miss shapes, and the "no shots" hatch.
+
 ```html
 <!doctype html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <meta name="theme-color" content="#111827" />
+    <meta name="theme-color" content="#f4f4f5" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#09090b" media="(prefers-color-scheme: dark)" />
     <title>Shot Tracker</title>
   </head>
   <body>
     <div id="app">
       <header class="bar">
-        <div>
-          <div class="label">Session</div>
-          <div id="session-date" class="value">–</div>
-        </div>
-        <button id="new-session" type="button">New</button>
+        <h1 class="title">Session <span id="session-date"></span></h1>
+        <button id="new-session" type="button"><span class="icon" data-icon="plus" aria-hidden="true"></span>New session</button>
       </header>
+
       <div id="banner" class="banner" role="status" hidden>
+        <span class="icon" data-icon="warning" aria-hidden="true"></span>
         <span id="banner-text"></span>
-        <button id="banner-dismiss" type="button" aria-label="Dismiss">×</button>
+        <button id="banner-dismiss" type="button" aria-label="Dismiss"><span class="icon" data-icon="x" aria-hidden="true"></span></button>
       </div>
+
       <section class="bar">
-        <div id="totals" class="value">0/0</div>
+        <div id="totals" class="stat" aria-live="polite">0/0</div>
         <div class="toggle" role="group" aria-label="Stats range">
-          <button type="button" data-view="current" aria-pressed="true">Now</button>
-          <button type="button" data-view="all" aria-pressed="false">All</button>
+          <button type="button" data-view="current" aria-pressed="true">This session</button>
+          <button type="button" data-view="all" aria-pressed="false">All time</button>
         </div>
       </section>
-      <main id="court" class="court"></main>
+
+      <main id="court" class="court">
+        <p id="hint" class="hint" hidden>Tap where you shot from</p>
+      </main>
+
+      <figure class="legend" aria-label="Heatmap key">
+        <div class="scale">
+          <span>Cold</span>
+          <span class="swatches" aria-hidden="true">
+            <i data-tone="c3"></i><i data-tone="c2"></i><i data-tone="c1"></i><i data-tone="n"></i><i data-tone="h1"></i><i data-tone="h2"></i><i data-tone="h3"></i>
+          </span>
+          <span>Hot</span>
+        </div>
+        <div class="marks">
+          <span><svg class="mark-key" viewBox="-0.3 -0.3 0.6 0.6" aria-hidden="true"><circle class="dot made" r="0.2" /></svg>Make</span>
+          <span><svg class="mark-key" viewBox="-0.3 -0.3 0.6 0.6" aria-hidden="true"><g class="dot miss"><path class="halo" d="M -0.2 -0.2 L 0.2 0.2 M 0.2 -0.2 L -0.2 0.2" /><path class="ink" d="M -0.2 -0.2 L 0.2 0.2 M 0.2 -0.2 L -0.2 0.2" /></g></svg>Miss</span>
+          <span><i class="swatch-empty" aria-hidden="true"></i>No shots</span>
+        </div>
+        <figcaption>Each zone is compared with a typical FG% for that shot. Faded zones have fewer than 3 shots.</figcaption>
+      </figure>
+
       <footer class="bar bottom">
-        <button id="undo" type="button" disabled>↶ Undo</button>
+        <button id="undo" type="button" disabled><span class="icon" data-icon="undo" aria-hidden="true"></span>Undo</button>
       </footer>
     </div>
     <script type="module" src="/src/main.js"></script>
@@ -1754,24 +1860,67 @@ Expected: PASS.
 
 - [ ] **Step 6: Write the styles** — `src/style.css`
 
+Token values are fixed by Global Constraints (heat) and the contrast check recorded in `findings.md` (UI pairs: every one at least 4.99:1). Z-index scale: one layer, `10` = picker overlay.
+
 ```css
+/* Tokens. Light is the default; dark is a separately chosen set, not an inversion. */
 :root {
-  color-scheme: light dark;
-  --bg: #f3f4f6;
-  --panel: #ffffff;
-  --text: #111827;
-  --muted: #6b7280;
-  --line: #1f2937;
-  --made: #16a34a;
-  --miss: #dc2626;
+  color-scheme: light;
+  --font-sans: 'Geist Variable', system-ui, sans-serif;
+  --font-mono: 'Geist Mono Variable', ui-monospace, monospace;
+  --radius: 12px;
+
+  --bg: #f4f4f5;
+  --surface: #fcfcfb;
+  --surface-2: #e4e4e7;
+  --text: #18181b;
+  --text-2: #52525b;
+  --border: #d4d4d8;
+  --accent: #047857;
+  --on-accent: #fcfcfb;
+  --warn-bg: #fef3c7;
+  --warn-text: #78350f;
+  --shadow: 0 12px 32px rgb(24 24 27 / 0.18);
+
+  --court-floor: #e4e4e7;
+  --court-line: #3f3f46;
+  --hatch: #a1a1aa;
+
+  --heat-c3: #1c5cab;
+  --heat-c2: #5598e7;
+  --heat-c1: #9ec5f4;
+  --heat-n: #f0efec;
+  --heat-h1: #f3ada7;
+  --heat-h2: #e06e68;
+  --heat-h3: #a1302f;
 }
+
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #0b0f17;
-    --panel: #111827;
-    --text: #f9fafb;
-    --muted: #9ca3af;
-    --line: #e5e7eb;
+    color-scheme: dark;
+    --bg: #09090b;
+    --surface: #18181b;
+    --surface-2: #27272a;
+    --text: #fafafa;
+    --text-2: #a1a1aa;
+    --border: #3f3f46;
+    --accent: #10b981;
+    --on-accent: #052e16;
+    --warn-bg: #422006;
+    --warn-text: #fde68a;
+    --shadow: 0 12px 32px rgb(9 9 11 / 0.6);
+
+    --court-floor: #27272a;
+    --court-line: #d4d4d8;
+    --hatch: #52525b;
+
+    --heat-c3: #5598e7;
+    --heat-c2: #2a78d6;
+    --heat-c1: #1c5cab;
+    --heat-n: #383835;
+    --heat-h1: #a1302f;
+    --heat-h2: #ca4442;
+    --heat-h3: #e06e68;
   }
 }
 
@@ -1780,80 +1929,192 @@ html, body { margin: 0; height: 100%; }
 body {
   background: var(--bg);
   color: var(--text);
-  font: 16px/1.4 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  font: 16px/1.4 var(--font-sans);
   -webkit-tap-highlight-color: transparent;
 }
 
 #app {
   display: flex;
   flex-direction: column;
-  height: 100dvh;
+  gap: 10px;
+  min-height: 100dvh;
   max-width: 560px;
   margin: 0 auto;
-  padding: env(safe-area-inset-top) 16px env(safe-area-inset-bottom);
+  padding: calc(env(safe-area-inset-top) + 10px) 16px calc(env(safe-area-inset-bottom) + 12px);
 }
-.bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 0; }
-.label { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
-.value { font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.title { margin: 0; font-size: 18px; font-weight: 600; letter-spacing: -0.01em; }
+.title span { color: var(--text-2); font-weight: 500; }
+.stat {
+  font-family: var(--font-mono);
+  font-size: 24px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
 
+/* Controls: one 12px radius everywhere. */
 button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
   font: inherit;
-  color: inherit;
-  background: var(--panel);
-  border: 1px solid color-mix(in srgb, var(--text) 15%, transparent);
-  border-radius: 12px;
+  font-weight: 600;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
   min-height: 44px;
-  padding: 0 16px;
+  padding: 0 14px;
+  white-space: nowrap;
   touch-action: manipulation;
+  cursor: pointer;
 }
-button:disabled { opacity: 0.4; }
+button:disabled { opacity: 0.4; cursor: default; }
+button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.icon { display: inline-flex; }
+.icon svg { width: 20px; height: 20px; fill: currentColor; }
 
-.toggle { display: flex; border-radius: 12px; overflow: hidden; }
-.toggle button { border-radius: 0; min-width: 64px; }
-.toggle button[aria-pressed='true'] { background: var(--text); color: var(--bg); }
+.toggle { display: flex; border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+.toggle button { border: 0; border-radius: 0; min-height: 42px; font-weight: 500; color: var(--text-2); }
+.toggle button[aria-pressed='true'] { background: var(--text); color: var(--bg); font-weight: 600; }
 
 .banner {
-  display: flex; align-items: center; justify-content: space-between; gap: 8px;
-  padding: 8px 12px; border-radius: 12px; background: #fef3c7; color: #78350f; font-size: 14px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 6px 6px 12px;
+  border-radius: var(--radius);
+  background: var(--warn-bg);
+  color: var(--warn-text);
+  font-size: 14px;
 }
 .banner[hidden] { display: none; }
-.banner button { min-height: 36px; background: transparent; border: 0; color: inherit; }
+#banner-text { flex: 1; }
+.banner button { min-height: 36px; padding: 0 8px; background: transparent; border: 0; color: inherit; }
 
-.court { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; }
-.court-svg { width: 100%; max-height: 100%; touch-action: manipulation; cursor: crosshair; }
-.lines * { fill: none; stroke: var(--line); stroke-width: 0.06; pointer-events: none; }
-.labels text {
-  font-weight: 700; fill: #111827; stroke: #ffffff; stroke-width: 0.08;
-  paint-order: stroke; pointer-events: none; user-select: none;
+/* Court */
+.court { position: relative; flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; }
+.court-svg { width: 100%; max-height: 100%; touch-action: manipulation; }
+.hint {
+  position: absolute;
+  left: 50%;
+  bottom: 14%;
+  transform: translateX(-50%);
+  margin: 0;
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text-2);
+  font-size: 14px;
+  white-space: nowrap;
+  pointer-events: none;
 }
+.hint[hidden] { display: none; }
+
+[data-tone='c3'] { --tone: var(--heat-c3); }
+[data-tone='c2'] { --tone: var(--heat-c2); }
+[data-tone='c1'] { --tone: var(--heat-c1); }
+[data-tone='n'] { --tone: var(--heat-n); }
+[data-tone='h1'] { --tone: var(--heat-h1); }
+[data-tone='h2'] { --tone: var(--heat-h2); }
+[data-tone='h3'] { --tone: var(--heat-h3); }
+.zone { fill: var(--tone, var(--court-floor)); }
+.zone[data-tone='empty'] { fill: url(#no-data); }
+.zone[data-low] { fill-opacity: 0.35; }
+.hatch-bg { fill: var(--court-floor); }
+.hatch-line { stroke: var(--hatch); stroke-width: 0.05; }
+
+.lines * { fill: none; stroke: var(--court-line); stroke-width: 0.06; pointer-events: none; }
+.labels text {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  fill: var(--text);
+  stroke: var(--surface);
+  stroke-width: 0.12;
+  stroke-linejoin: round;
+  paint-order: stroke;
+  pointer-events: none;
+  user-select: none;
+}
+
+/* Shot marks: shape carries make/miss, ink + 2px surface halo keeps them legible on any tone. */
 .dot { pointer-events: none; }
-.dot.made { fill: var(--made); stroke: #ffffff; stroke-width: 0.04; }
-.dot.miss { fill: none; stroke: var(--miss); stroke-width: 0.07; }
+.dot.made { fill: var(--text); stroke: var(--surface); stroke-width: 0.08; }
+.dot.miss path { fill: none; stroke-linecap: round; }
+.dot.miss .halo { stroke: var(--surface); stroke-width: 0.2; }
+.dot.miss .ink { stroke: var(--text); stroke-width: 0.08; }
 .ghost { fill: none; stroke: var(--text); stroke-width: 0.06; stroke-dasharray: 0.12 0.08; pointer-events: none; }
 
-.bottom { justify-content: center; padding-bottom: 16px; }
-#undo { min-width: 160px; min-height: 56px; }
+/* Legend */
+.legend { margin: 0; display: grid; gap: 6px; font-size: 13px; color: var(--text-2); }
+.scale, .marks { display: flex; align-items: center; gap: 8px; }
+.marks { gap: 16px; }
+.marks > span { display: inline-flex; align-items: center; gap: 6px; }
+.swatches { display: flex; flex: 1; gap: 2px; }
+.swatches i { flex: 1; height: 10px; background: var(--tone); }
+.swatches i:first-child { border-radius: 4px 0 0 4px; }
+.swatches i:last-child { border-radius: 0 4px 4px 0; }
+.mark-key { width: 14px; height: 14px; }
+.swatch-empty {
+  width: 16px;
+  height: 10px;
+  border-radius: 2px;
+  background: repeating-linear-gradient(45deg, var(--hatch) 0 1px, var(--court-floor) 1px 4px);
+}
+.legend figcaption { font-size: 12px; }
 
+.bottom { justify-content: center; }
+#undo { min-width: 168px; min-height: 56px; }
+
+/* Picker overlay (z-index 10 is the only layer in the app). */
 .picker-backdrop { position: fixed; inset: 0; z-index: 10; }
 .picker-backdrop[hidden] { display: none; }
 .picker {
-  position: fixed; display: flex; gap: 8px; padding: 8px;
-  background: var(--panel); border-radius: 16px; box-shadow: 0 8px 24px rgb(0 0 0 / 0.25);
+  position: fixed;
+  display: flex;
+  gap: 8px;
+  padding: 8px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
 }
-.picker button { min-width: 72px; min-height: 56px; font-weight: 700; border: 0; color: #ffffff; }
-.picker .make { background: var(--made); }
-.picker .miss { background: var(--miss); }
+.picker button { min-width: 112px; min-height: 56px; font-size: 17px; }
+.picker .make { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.picker .miss { background: var(--surface-2); }
+
+/* Motion: feedback only, transform/opacity only, and none at all under reduced motion. */
+@media (prefers-reduced-motion: no-preference) {
+  button { transition: transform 120ms cubic-bezier(0.16, 1, 0.3, 1); }
+  button:active:not(:disabled) { transform: scale(0.98); }
+  .picker { animation: picker-in 140ms cubic-bezier(0.16, 1, 0.3, 1); }
+}
+@keyframes picker-in {
+  from { opacity: 0; transform: scale(0.96); }
+}
 ```
 
 - [ ] **Step 7: Write the wiring** — `src/main.js`
 
 ```js
+import '@fontsource-variable/geist';
+import '@fontsource-variable/geist-mono';
 import './style.css';
+import plusIcon from '@phosphor-icons/core/bold/plus-bold.svg?raw';
+import undoIcon from '@phosphor-icons/core/bold/arrow-counter-clockwise-bold.svg?raw';
+import warningIcon from '@phosphor-icons/core/bold/warning-bold.svg?raw';
+import xIcon from '@phosphor-icons/core/bold/x-bold.svg?raw';
 import { createApp } from './app.js';
 import { classifyZone } from './court/geometry.js';
 import { createCourt } from './court/render.js';
 import { createShotPicker } from './ui/shotPicker.js';
 import { createControls } from './ui/controls.js';
+
+const ICONS = { plus: plusIcon, undo: undoIcon, warning: warningIcon, x: xIcon };
+for (const slot of document.querySelectorAll('[data-icon]')) slot.innerHTML = ICONS[slot.dataset.icon];
 
 // Review Focus #5: the localStorage getter itself can throw (blocked site data).
 function getStorage() {
@@ -1899,30 +2160,36 @@ app.subscribe((snap) => {
 });
 ```
 
-- [ ] **Step 8: Run the full suite and the build**
+- [ ] **Step 8: Run the full suite, the build, and the copy check**
 
 Run: `npm test`
 Expected: all test files PASS.
 
 Run: `npm run build`
-Expected: `dist/` is built and Vite prints no errors.
+Expected: `dist/` is built and Vite prints no errors. The font files and inlined icons appear in the build output.
 
-- [ ] **Step 9: Manual verification at 390×844**
+Run: `grep -rnP "[\x{2013}\x{2014}]" index.html src` (taste rule: zero em and en dashes in visible copy)
+Expected: no output.
 
-Run `npm run dev` (in the background), then open the printed URL in a browser (Playwright MCP is fine) with the viewport at 390×844. Check each item and record the results in `progress.md`:
+- [ ] **Step 9: Manual verification at 390×844, both colour schemes**
+
+Run `npm run dev` (in the background), then open the printed URL in a browser (Playwright MCP is fine) with the viewport at 390×844. Take a screenshot in light mode and another in emulated dark mode (`prefers-color-scheme: dark`). Check each item and record the results in `progress.md`:
 1. Tap the paint, mid, a corner, a wing and the top. In each case the ghost dot appears, Make/Miss stays fully on screen, and the shot lands in the right zone label.
 2. Tap a corner hard against the sideline. The popover stays fully visible.
 3. Tap the backdrop while the picker is open. Nothing is logged and the ghost disappears.
-4. Undo removes the last dot. Undo is disabled once the session is empty.
-5. Log 1–2 shots in one zone and confirm it looks faded. Log 3 or more and confirm it's fully coloured. An empty zone is grey.
-6. Switch to All: dots are hidden and stats include earlier sessions. Switch to Now: dots return.
-7. New session with shots asks for confirmation and then starts empty. With no shots it does nothing.
-8. Reload the page and confirm all data persists.
-9. In DevTools, run `localStorage.setItem('shot-tracker:v1','{bad')` and reload. The banner appears and a `shot-tracker:corrupt-*` key exists.
+4. Undo removes the last mark. Undo is disabled once the session is empty, and the "Tap where you shot from" hint returns.
+5. In one zone, 1 to 2 shots look faded and 3 or more look full. An empty zone is hatched, not grey.
+6. Make dots and miss crosses stay readable on the darkest blue and darkest red zones in **both** themes. Zone labels stay readable on every tone in both themes.
+7. Switch to All time: marks are hidden and stats include earlier sessions. Switch to This session: marks return.
+8. New session with shots asks for confirmation and then starts empty. With no shots it does nothing.
+9. Reload the page and confirm all data persists.
+10. In DevTools, run `localStorage.setItem('shot-tracker:v1','{bad')` and reload. The banner appears with its warning icon and a `shot-tracker:corrupt-*` key exists.
+11. With reduced motion emulated, the picker appears without animation and buttons don't scale on press.
+12. The header, totals, toggle, legend and Undo all fit without horizontal scroll, and no button label wraps.
 
 - [ ] **Step 10: Commit**
 
 ```bash
 git add index.html src/main.js src/style.css src/ui/controls.js tests/controls.test.js
-git commit -m "feat: page shell, controls, and app wiring"
+git commit -m "feat: page shell, styling, controls, and app wiring"
 ```

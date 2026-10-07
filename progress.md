@@ -32,8 +32,9 @@
 
 ### Phase 3: UI
 
-- **Status:** in_progress
+- **Status:** complete
 - Task 7 complete: court/render.js (zones with data-tone/data-low, hatch pattern, dot/x marks, ghost). Tests: 7/7.
+- Task 8 complete: ui/shotPicker.js (edge-clamped popover, one result per open, Phosphor icons via ?raw). Tests: 12/12.
 
 ### Phase 4: Shell, Wiring & Verification
 
@@ -50,6 +51,7 @@
 | store.test.js | Task 5 | pass | 16/16 | pass |
 | app.test.js | Task 6 | pass | 9/9 | pass |
 | render.test.js | Task 7 | pass | 7/7 | pass |
+| shotPicker.test.js | Task 8 | pass | 12/12 | pass |
 
 ## Error Log
 

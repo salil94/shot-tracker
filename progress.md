@@ -4,7 +4,7 @@
 
 ### Phase 0: Design & Plan
 
-- **Status:** in_progress
+- **Status:** complete
 - Actions taken:
   - Brainstormed with the user: phone-first for their own workouts; tap, then the Make/Miss popover with Undo; current session plus an All-time toggle; 5 combined zones; FIBA dimensions.
   - Wrote and committed the spec.
@@ -17,25 +17,55 @@
 
 ### Phase 1: Foundation
 
-- **Status:** pending
+- **Status:** complete
+- Branch: feat/shot-tracker
+- Task 1 complete: project setup, installed deps, court/geometry.js. Tests: geometry 26/26 pass.
+- Task 2 complete: stats.js (pct, zoneStats, totals, formatStat). Tests: 7/7.
+- Task 3 complete: heatmap.js (diverging 7-bin tones, low-confidence flag). Tests: 9/9.
 
 ### Phase 2: State & Persistence
 
-- **Status:** pending
+- **Status:** complete
+- Task 4 complete: state.js (pure session ops). Tests: 9/9.
+- Task 5 complete: store.js (load/save, corrupt backup, storage-unavailable fallback). Tests: 16/16.
+- Task 6 complete: app.js controller (save on every change, view toggle, warnings). Tests: 9/9.
 
 ### Phase 3: UI
 
-- **Status:** pending
+- **Status:** complete
+- Task 7 complete: court/render.js (zones with data-tone/data-low, hatch pattern, dot/x marks, ghost). Tests: 7/7.
+- Task 8 complete: ui/shotPicker.js (edge-clamped popover, one result per open, Phosphor icons via ?raw). Tests: 12/12.
 
 ### Phase 4: Shell, Wiring & Verification
 
-- **Status:** pending
+- **Status:** complete
+- Task 9 complete: controls.js, index.html, style.css, main.js. Tests 102/102, build clean, no em/en dashes. Browser check at 390x844 (light, dark, reduced motion): all 12 items pass. Fixed during the check: popover overflowed the right edge by ~7px (measured mid-animation; now uses offsetWidth, regression test added) and the totals line wrapped (nowrap). Note: favicon.ico 404 (harmless).
+- Final review (self-review, no subagents): fixed corrupt-data re-backup on every reload (test added, suite 103/103). Deferred minors: picker Escape/focus + court keyboard access, multi-tab overwrite, favicon 404, corner labels under marks.
+### Change 2: 14 NBA 2K-style hot zones
+
+- **Status:** complete
+- Requested by user: 14 zones (5 three, 5 mid, 4 close), left/right separate, angle wedges from the basket, FIBA kept. Scope: Tasks 1, 2, 7.
+- Task 1 redone: classifyZone with 14 zones (restricted r=1.25; 22.5° center wedges; 67.5° elbow/baseline). geometry 39/39. Old-zone-name fixtures in heatmap/state/store/app tests renamed (fixture-only ruling).
+- Task 2 redone: stats tests cover 14 zones and left/right separation (code unchanged, ZONES-driven). 8/8; verified failing against old geometry.
+- Task 7 redone: render.js draws 14 mirrored wedges (rays at 22.5°/67.5°, restricted circle r=1.25) with 2K-style two-line labels (FG% over made/attempts). Render 10/10, full suite 120/120, build clean. Browser: drawn zones match classifyZone on 79k sampled points (2 sub-mm boundary mismatches); label count line enlarged after the check.
 
 ## Test Results
 
 | Test | Input | Expected | Actual | Status |
 |------|-------|----------|--------|--------|
-|      |       |          |        |        |
+| geometry.test.js | Task 1 | pass | 26/26 | pass |
+| stats.test.js | Task 2 | pass | 7/7 | pass |
+| heatmap.test.js | Task 3 | pass | 9/9 | pass |
+| state.test.js | Task 4 | pass | 9/9 | pass |
+| store.test.js | Task 5 | pass | 16/16 | pass |
+| app.test.js | Task 6 | pass | 9/9 | pass |
+| render.test.js | Task 7 | pass | 7/7 | pass |
+| shotPicker.test.js | Task 8 | pass | 12/12 | pass |
+| controls.test.js + full suite | Task 9 | pass | 102/102 | pass |
+| full suite after final fix | Final | pass | 103/103 | pass |
+| geometry.test.js (14 zones) | Change 2 Task 1 | pass | 39/39 | pass |
+| stats.test.js (14 zones) | Change 2 Task 2 | pass | 8/8 | pass |
+| full suite (14 zones) | Change 2 Task 7 | pass | 120/120 | pass |
 
 ## Error Log
 

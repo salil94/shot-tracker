@@ -6,9 +6,7 @@ Ship a phone-first web app that logs basketball shots on a FIBA half-court (tap 
 
 ## Next Step
 
-Wait for the user to review `docs/superpowers/plans/2026-10-07-shot-tracker.md`, then start Phase 1 (Task 1: project setup + geometry).
-
-## Current Phase
+All phases complete on branch feat/shot-tracker. Next: the user decides how to integrate the branch (merge / PR / keep).
 
 Phase 0 (awaiting plan review)
 
@@ -27,35 +25,35 @@ Phase 0 (awaiting plan review)
 - [x] Context7 lookups for Vite and Vitest setup (see findings.md)
 - [x] Write the detailed implementation plan
 - [x] Apply design-taste-frontend + dataviz to the court/UI styling (Tasks 3, 7, 8, 9 revised)
-- [ ] User reviews the plan
-- **Status:** in_progress
+- [x] User reviews the plan
+- **Status:** complete
 
 ### Phase 1: Foundation (plan Tasks 1–3)
 
-- [ ] Task 1: package.json, vite.config.js, .gitignore, install vite/vitest/jsdom, `court/geometry.js` (TDD)
-- [ ] Task 2: `stats.js` (TDD)
-- [ ] Task 3: `heatmap.js` (TDD)
-- **Status:** pending
+- [x] Task 1: package.json, vite.config.js, .gitignore, install vite/vitest/jsdom, `court/geometry.js` (TDD)
+- [x] Task 2: `stats.js` (TDD)
+- [x] Task 3: `heatmap.js` (TDD)
+- **Status:** complete
 
 ### Phase 2: State & Persistence (plan Tasks 4–6)
 
-- [ ] Task 4: `state.js` pure session ops (TDD)
-- [ ] Task 5: `store.js` load/save/migrate/corrupt recovery (TDD)
-- [ ] Task 6: `app.js` controller with immediate persistence (TDD)
-- **Status:** pending
+- [x] Task 4: `state.js` pure session ops (TDD)
+- [x] Task 5: `store.js` load/save/migrate/corrupt recovery (TDD)
+- [x] Task 6: `app.js` controller with immediate persistence (TDD)
+- **Status:** complete
 
 ### Phase 3: UI (plan Tasks 7–8)
 
-- [ ] Task 7: `court/render.js` SVG court, zones, labels, dots (TDD, jsdom)
-- [ ] Task 8: `ui/shotPicker.js` placement + single-resolution picker (TDD, jsdom)
-- **Status:** pending
+- [x] Task 7: `court/render.js` SVG court, zones, labels, dots (TDD, jsdom)
+- [x] Task 8: `ui/shotPicker.js` placement + single-resolution picker (TDD, jsdom)
+- **Status:** complete
 
 ### Phase 4: Shell, Wiring & Verification (plan Task 9)
 
-- [ ] `ui/controls.js` (TDD, jsdom), `index.html`, `style.css`, `main.js`
-- [ ] `npm test` all green, `npm run build` clean
-- [ ] Manual check at 390×844 (9-item checklist in plan Task 9 Step 9), with results logged in progress.md
-- **Status:** pending
+- [x] `ui/controls.js` (TDD, jsdom), `index.html`, `style.css`, `main.js`
+- [x] `npm test` all green, `npm run build` clean
+- [x] Manual check at 390×844 (9-item checklist in plan Task 9 Step 9), with results logged in progress.md
+- **Status:** complete
 
 ## Key Questions
 

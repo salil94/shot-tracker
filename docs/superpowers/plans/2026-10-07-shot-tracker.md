@@ -24,14 +24,14 @@
 - Vanilla JS ES modules + Vite. No UI framework. Runtime packages are limited to the two Fontsource fonts and `@phosphor-icons/core`.
 - FIBA court in metres. Origin = basket centre, +y toward half-court, baseline y = −1.575, half-court line y = 12.425, x ∈ [−7.5, 7.5].
 - Paint 4.9 m wide × 5.8 m from baseline. 3pt arc radius 6.75. Corner lines at |x| = 6.6. Corner/arc break y = √(6.75² − 6.6²) ≈ 1.415.
-- Zone ids exactly: `paint`, `mid`, `corner3`, `wing3`, `top3`. A shot on the 3pt line counts as 2. Top/wing split at 22.5° from straight-on.
+- 14 zone ids exactly (NBA 2K hot zones, left/right separate): 3PT `leftCorner3 leftWing3 top3 rightWing3 rightCorner3`; mid `leftBaseline leftElbow straightaway rightElbow rightBaseline`; close `restricted leftShort shortCenter rightShort`. Wedges are angles from the basket at 22.5° (center/side) and 67.5° (elbow/baseline), mirrored. Restricted area radius 1.25. A shot on the 3pt line counts as 2.
 - Heatmap anchors: 2pt cold ≤ 30% / hot ≥ 60%; 3pt cold ≤ 20% / hot ≥ 45%. 7 diverging bins `c3 c2 c1 n h1 h2 h3`. 0 attempts = hatched; 1–2 attempts = 35% fill-opacity.
 - Heat tokens (validated in OKLCH: lightness changes steadily on each side and the two sides mirror; the poles' colourblind ΔE is ≈ 19):
   - light `c3 #1c5cab  c2 #5598e7  c1 #9ec5f4  n #f0efec  h1 #f3ada7  h2 #e06e68  h3 #a1302f`
   - dark  `c3 #5598e7  c2 #2a78d6  c1 #1c5cab  n #383835  h1 #a1302f  h2 #ca4442  h3 #e06e68`
 - localStorage key `shot-tracker:v1`, schema `version: 1`. Corrupt data is backed up to `shot-tracker:corrupt-<timestamp>`.
 - Popover buttons ≥ 56 px. Primary viewport 390×844 portrait.
-- Out of scope: export, trends, session history list, PWA, left/right split.
+- Out of scope: export, trends, session history list, PWA.
 - TDD: every module with logic gets its failing test first. Commit after each task.
 
 ## Review Focus
@@ -82,7 +82,7 @@ Note: the spec put session operations inside `store.js`. This plan splits them i
 - Test: `tests/geometry.test.js`
 
 **Interfaces:**
-- Produces: `COURT` (object of numeric constants, see code), `ZONES: string[]`, `THREE_POINT_ZONES: Set<string>`, `isInBounds(x, y): boolean`, `isThree(x, y): boolean`, `classifyZone(x, y): 'paint'|'mid'|'corner3'|'wing3'|'top3'|null`
+- Produces: `COURT` (object of numeric constants incl. `restrictedRadius`, `centerAngleDeg`, `baselineAngleDeg`; see code), `ZONES: string[]` (the 14 hot-zone ids, 3PT then mid then close, left→right), `THREE_POINT_ZONES: Set<string>`, `isInBounds(x, y): boolean`, `isThree(x, y): boolean`, `classifyZone(x, y): ZoneId | null`
 
 - [ ] **Step 1: Create project files**
 
@@ -132,8 +132,9 @@ Expected: `package.json` has `devDependencies` (vite, vitest, jsdom) and `depend
 
 ```js
 import { describe, it, expect } from 'vitest';
-import { COURT, ZONES, classifyZone, isInBounds, isThree } from '../src/court/geometry.js';
+import { COURT, ZONES, THREE_POINT_ZONES, classifyZone, isInBounds, isThree } from '../src/court/geometry.js';
 
+// Point at distance r from the basket, deg from straight-on (negative = shooter's left).
 const atAngle = (deg, r) => {
   const a = (deg * Math.PI) / 180;
   return [r * Math.sin(a), r * Math.cos(a)];
@@ -143,8 +144,15 @@ describe('COURT', () => {
   it('puts the corner/arc break 2.99 m from the baseline (FIBA)', () => {
     expect(COURT.breakY - COURT.baselineY).toBeCloseTo(2.99, 2);
   });
-  it('lists the five zones', () => {
-    expect(ZONES).toEqual(['paint', 'mid', 'corner3', 'wing3', 'top3']);
+  it('lists the 14 hot zones: 3PT, mid-range, close', () => {
+    expect(ZONES).toEqual([
+      'leftCorner3', 'leftWing3', 'top3', 'rightWing3', 'rightCorner3',
+      'leftBaseline', 'leftElbow', 'straightaway', 'rightElbow', 'rightBaseline',
+      'restricted', 'leftShort', 'shortCenter', 'rightShort',
+    ]);
+  });
+  it('marks exactly the five 3PT zones as threes', () => {
+    expect([...THREE_POINT_ZONES]).toEqual(['leftCorner3', 'leftWing3', 'top3', 'rightWing3', 'rightCorner3']);
   });
 });
 
@@ -171,35 +179,77 @@ describe('isThree', () => {
 
 describe('classifyZone', () => {
   it.each([
-    // paint (edges inclusive)
-    [0, 0, 'paint'],
-    [2.45, 4.225, 'paint'],
-    [-2.45, -1.575, 'paint'],
-    // mid-range
-    [2.46, 0, 'mid'],
-    [0, 4.23, 'mid'],
-    [0, 6.75, 'mid'], // exactly on the arc
-    [6.6, 0, 'mid'], // exactly on the corner line
-    [4.55, 1.6, 'mid'],
-    // corner 3 (y <= break)
-    [6.61, 0, 'corner3'],
-    [-6.61, -1.5, 'corner3'],
-    [7.4, 1.41, 'corner3'],
-    // above the break, beyond the arc
-    [6.7, 1.5, 'wing3'],
-    [7.4, 12, 'wing3'],
-    // straight on
+    // close: restricted area (r <= 1.25, edge inclusive), behind the basket too
+    [0, 0, 'restricted'],
+    [0, 1.25, 'restricted'],
+    [0, -1.2, 'restricted'],
+    // close: short center (within 22.5°, up to the FT line)
+    [0, 1.26, 'shortCenter'],
+    [0, 4.225, 'shortCenter'],
+    // close: left/right short (rest of the paint, edges inclusive)
+    [2.45, 4.225, 'rightShort'],
+    [-2.45, 4.225, 'leftShort'],
+    [-2.45, -1.575, 'leftShort'],
+    [1.5, 0, 'rightShort'],
+    [0.1, -1.4, 'rightShort'], // behind the basket, outside the restricted area
+    // mid-range: straightaway (above the FT line, within 22.5°)
+    [0, 4.23, 'straightaway'],
+    [0, 6.75, 'straightaway'], // exactly on the arc
+    // mid-range: elbows and baselines
+    [2.46, 4, 'rightElbow'],
+    [-3.6, 4.4, 'leftElbow'],
+    [4.6, 0.3, 'rightBaseline'],
+    [-6.6, 0, 'leftBaseline'], // exactly on the corner line
+    [-4, -1.5, 'leftBaseline'], // behind the basket, outside the paint
+    // 3PT
+    [6.61, 0, 'rightCorner3'],
+    [-6.61, -1.5, 'leftCorner3'],
+    [-7.4, 1.41, 'leftCorner3'],
+    [6.7, 1.5, 'rightWing3'],
+    [-7.4, 12, 'leftWing3'],
     [0, 6.76, 'top3'],
     [0, 12, 'top3'],
   ])('(%s, %s) → %s', (x, y, zone) => {
     expect(classifyZone(x, y)).toBe(zone);
   });
 
-  it('splits top/wing at 22.5° from straight-on, both sides', () => {
+  it('splits center/side wedges at 22.5° in every ring, mirrored', () => {
+    // 3PT
     expect(classifyZone(...atAngle(22, 8))).toBe('top3');
-    expect(classifyZone(...atAngle(-22, 8))).toBe('top3');
-    expect(classifyZone(...atAngle(23, 8))).toBe('wing3');
-    expect(classifyZone(...atAngle(-23, 8))).toBe('wing3');
+    expect(classifyZone(...atAngle(23, 8))).toBe('rightWing3');
+    expect(classifyZone(...atAngle(-23, 8))).toBe('leftWing3');
+    // mid-range
+    expect(classifyZone(...atAngle(-22, 5.5))).toBe('straightaway');
+    expect(classifyZone(...atAngle(23, 5.5))).toBe('rightElbow');
+    expect(classifyZone(...atAngle(-23, 5.5))).toBe('leftElbow');
+    // close
+    expect(classifyZone(...atAngle(22, 3))).toBe('shortCenter');
+    expect(classifyZone(...atAngle(23, 3))).toBe('rightShort');
+    expect(classifyZone(...atAngle(-23, 3))).toBe('leftShort');
+  });
+
+  it('splits mid-range elbow/baseline at 67.5°, mirrored', () => {
+    expect(classifyZone(...atAngle(67, 5))).toBe('rightElbow');
+    expect(classifyZone(...atAngle(68, 5))).toBe('rightBaseline');
+    expect(classifyZone(...atAngle(-67, 5))).toBe('leftElbow');
+    expect(classifyZone(...atAngle(-68, 5))).toBe('leftBaseline');
+  });
+
+  it('mirrors every zone left/right', () => {
+    const mirror = (z) => z.replace(/^left/, 'RIGHT').replace(/^right/, 'left').replace(/^RIGHT/, 'right');
+    for (let x = 0.3; x <= 7.4; x += 0.35) {
+      for (let y = -1.5; y <= 12.4; y += 0.35) {
+        expect(classifyZone(-x, y)).toBe(mirror(classifyZone(x, y)));
+      }
+    }
+  });
+
+  it('reaches all 14 zones', () => {
+    const seen = new Set();
+    for (let x = -7.45; x <= 7.45; x += 0.1) {
+      for (let y = -1.55; y <= 12.4; y += 0.1) seen.add(classifyZone(x, y));
+    }
+    expect([...seen].sort()).toEqual([...ZONES].sort());
   });
 
   it.each([
@@ -237,7 +287,9 @@ export const COURT = {
   threeRadius: THREE_RADIUS,
   cornerX: CORNER_X,
   breakY: Math.sqrt(THREE_RADIUS ** 2 - CORNER_X ** 2), // ≈ 1.415 (2.99 m from baseline)
-  topAngleDeg: 22.5,
+  restrictedRadius: 1.25, // FIBA no-charge semicircle
+  centerAngleDeg: 22.5, // centre wedges (top3, straightaway, shortCenter) vs side wedges
+  baselineAngleDeg: 67.5, // mid-range elbow vs baseline
   ftCircleRadius: 1.8,
   centerCircleRadius: 1.8,
   rimRadius: 0.225,
@@ -245,8 +297,13 @@ export const COURT = {
   backboardHalfWidth: 0.9,
 };
 
-export const ZONES = ['paint', 'mid', 'corner3', 'wing3', 'top3'];
-export const THREE_POINT_ZONES = new Set(['corner3', 'wing3', 'top3']);
+// NBA 2K-style hot zones, left/right separate. "Left" is the shooter's left facing the basket (x < 0).
+export const ZONES = [
+  'leftCorner3', 'leftWing3', 'top3', 'rightWing3', 'rightCorner3',
+  'leftBaseline', 'leftElbow', 'straightaway', 'rightElbow', 'rightBaseline',
+  'restricted', 'leftShort', 'shortCenter', 'rightShort',
+];
+export const THREE_POINT_ZONES = new Set(['leftCorner3', 'leftWing3', 'top3', 'rightWing3', 'rightCorner3']);
 
 export function isInBounds(x, y) {
   return (
@@ -264,15 +321,24 @@ export function isThree(x, y) {
   return Math.hypot(x, y) > COURT.threeRadius;
 }
 
+const inPaint = (x, y) => Math.abs(x) <= COURT.paintHalfWidth && y <= COURT.paintTopY;
+
 export function classifyZone(x, y) {
   if (!isInBounds(x, y)) return null;
+  const side = x < 0 ? 'left' : 'right';
+  // Angle from straight-on toward half-court: 0° = centre, 180° = behind the basket.
+  const deg = (Math.abs(Math.atan2(x, y)) * 180) / Math.PI;
+  const centre = deg <= COURT.centerAngleDeg;
   if (isThree(x, y)) {
-    if (y <= COURT.breakY) return 'corner3';
-    const angle = (Math.abs(Math.atan2(x, y)) * 180) / Math.PI;
-    return angle <= COURT.topAngleDeg ? 'top3' : 'wing3';
+    if (y <= COURT.breakY) return `${side}Corner3`;
+    return centre ? 'top3' : `${side}Wing3`;
   }
-  if (Math.abs(x) <= COURT.paintHalfWidth && y <= COURT.paintTopY) return 'paint';
-  return 'mid';
+  if (inPaint(x, y)) {
+    if (Math.hypot(x, y) <= COURT.restrictedRadius) return 'restricted';
+    return centre ? 'shortCenter' : `${side}Short`;
+  }
+  if (centre) return 'straightaway';
+  return deg <= COURT.baselineAngleDeg ? `${side}Elbow` : `${side}Baseline`;
 }
 ```
 
@@ -298,13 +364,14 @@ git commit -m "feat: project setup and FIBA court zone classification"
 
 **Interfaces:**
 - Consumes: `ZONES` from `src/court/geometry.js`
-- Produces: `pct(made, attempts): number|null` (integer percent), `zoneStats(shots): { [zone]: { made, attempts, pct } }` (always has all 5 zones), `totals(shots): { made, attempts, pct }`, `formatStat({ made, attempts, pct }): string`. A shot is `{ x, y, made: boolean, zone, t }`.
+- Produces: `pct(made, attempts): number|null` (integer percent), `zoneStats(shots): { [zone]: { made, attempts, pct } }` (always has all 14 zones, in `ZONES` order), `totals(shots): { made, attempts, pct }`, `formatStat({ made, attempts, pct }): string`. A shot is `{ x, y, made: boolean, zone, t }`.
 
 - [ ] **Step 1: Write the failing test** — `tests/stats.test.js`
 
 ```js
 import { describe, it, expect } from 'vitest';
 import { pct, zoneStats, totals, formatStat } from '../src/stats.js';
+import { ZONES } from '../src/court/geometry.js';
 
 const shot = (zone, made) => ({ x: 0, y: 0, zone, made, t: 0 });
 
@@ -318,33 +385,40 @@ describe('pct', () => {
 });
 
 describe('zoneStats', () => {
-  it('returns every zone empty for no shots', () => {
+  it('returns all 14 zones empty for no shots', () => {
     const s = zoneStats([]);
-    expect(Object.keys(s)).toEqual(['paint', 'mid', 'corner3', 'wing3', 'top3']);
+    expect(Object.keys(s)).toEqual(ZONES);
+    expect(Object.keys(s)).toHaveLength(14);
     for (const z of Object.values(s)) expect(z).toEqual({ made: 0, attempts: 0, pct: null });
   });
 
   it('counts makes and attempts per zone', () => {
     const s = zoneStats([
-      shot('paint', true),
-      shot('paint', false),
-      shot('paint', true),
+      shot('restricted', true),
+      shot('restricted', false),
+      shot('restricted', true),
       shot('top3', true),
     ]);
-    expect(s.paint).toEqual({ made: 2, attempts: 3, pct: 67 });
+    expect(s.restricted).toEqual({ made: 2, attempts: 3, pct: 67 });
     expect(s.top3).toEqual({ made: 1, attempts: 1, pct: 100 });
-    expect(s.mid).toEqual({ made: 0, attempts: 0, pct: null });
+    expect(s.straightaway).toEqual({ made: 0, attempts: 0, pct: null });
   });
 
-  it('ignores shots with an unknown zone', () => {
-    const s = zoneStats([shot('bogus', true)]);
+  it('keeps left and right zones separate', () => {
+    const s = zoneStats([shot('leftCorner3', true), shot('rightCorner3', false), shot('rightCorner3', false)]);
+    expect(s.leftCorner3).toEqual({ made: 1, attempts: 1, pct: 100 });
+    expect(s.rightCorner3).toEqual({ made: 0, attempts: 2, pct: 0 });
+  });
+
+  it('ignores shots with an unknown zone, including the old combined ids', () => {
+    const s = zoneStats([shot('bogus', true), shot('corner3', true), shot('paint', true)]);
     expect(Object.values(s).every((z) => z.attempts === 0)).toBe(true);
   });
 });
 
 describe('totals', () => {
   it('sums across all zones', () => {
-    expect(totals([shot('paint', true), shot('wing3', false)])).toEqual({ made: 1, attempts: 2, pct: 50 });
+    expect(totals([shot('restricted', true), shot('leftWing3', false)])).toEqual({ made: 1, attempts: 2, pct: 50 });
     expect(totals([])).toEqual({ made: 0, attempts: 0, pct: null });
   });
 });
@@ -1141,11 +1215,12 @@ git commit -m "feat: app controller with immediate persistence"
 - Test: `tests/render.test.js`
 
 **Interfaces:**
-- Consumes: `COURT`, `ZONES`, `classifyZone` (geometry), `zoneTone` (heatmap), `formatStat` (stats)
+- Consumes: `COURT` (incl. `restrictedRadius`, `centerAngleDeg`, `baselineAngleDeg`), `ZONES`, `classifyZone` (geometry), `zoneTone` (heatmap)
 - Produces:
-  - `zonePaths(): { [zone]: string }`, SVG path data in court metres. `mid` uses `fill-rule="evenodd"` with the paint as a hole.
+  - `zonePaths(): { [zone]: string }` for all 14 zones, SVG path data in court metres. Side zones are generated once and mirrored (x negated, arc sweeps flipped); wedge edges are rays from the basket at 22.5° and 67.5°.
   - `courtLinePaths(): string[]`
-  - `LABEL_ANCHORS: { [zone]: Array<{ x, y, rotate? }> }`
+  - `LABEL_ANCHORS: { [zone]: { x, y, rotate? } }` (one per zone; corners rotated)
+  - `zoneLabel({ made, attempts, pct }): { pct: '58%', count: '7/12' }` (both `''` for an empty zone). Each label is a `<text data-zone>` with `.pct` and `.count` tspans.
   - `createCourt(container): { svg, setZones(zoneStats), setDots(shots), setGhost({x,y}|null), clientToCourt(clientX, clientY): {x,y} }`. `clientToCourt` returns `{NaN, NaN}` if the SVG has no screen CTM, and `classifyZone` rejects that.
 - Zone colour contract with CSS (Task 9): every zone path carries `data-tone="c3|c2|c1|n|h1|h2|h3|empty"` and, when there are fewer than 3 attempts, a boolean `data-low` attribute. CSS maps tones to `--heat-*` tokens. `empty` fills with the `#no-data` hatch pattern defined in this SVG.
 - Shot marks are encoded by **shape**: a make is `<circle class="dot made">`, and a miss is `<g class="dot miss">` holding two paths (`.halo`, `.ink`) that draw an ×.
@@ -1157,14 +1232,14 @@ SVG facts: `viewBox="-7.5 -1.575 15 14"`, so court coordinates and SVG user unit
 ```js
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach } from 'vitest';
-import { createCourt, zonePaths, LABEL_ANCHORS } from '../src/court/render.js';
+import { createCourt, zonePaths, zoneLabel, LABEL_ANCHORS } from '../src/court/render.js';
 import { ZONES, classifyZone } from '../src/court/geometry.js';
 import { zoneStats } from '../src/stats.js';
 
 const shot = (x, y, zone, made) => ({ x, y, zone, made, t: 0 });
 
 describe('zonePaths', () => {
-  it('has well-formed path data for every zone', () => {
+  it('has well-formed path data for all 14 zones', () => {
     const paths = zonePaths();
     expect(Object.keys(paths)).toEqual(ZONES);
     for (const d of Object.values(paths)) {
@@ -1172,13 +1247,34 @@ describe('zonePaths', () => {
       expect(d).not.toMatch(/NaN|undefined/);
     }
   });
+
+  it('mirrors left and right paths (same magnitudes, opposite arc sweeps)', () => {
+    const paths = zonePaths();
+    const sweeps = (d) => [...d.matchAll(/ A \S+ \S+ 0 [01] ([01]) /g)].map((m) => Number(m[1]));
+    const shape = (d) => d.replace(/ A (\S+) (\S+) 0 ([01]) [01] /g, ' A $1 $2 0 $3 S ').replace(/-/g, '');
+    for (const side of ['Corner3', 'Wing3', 'Elbow', 'Baseline', 'Short']) {
+      const l = paths[`left${side}`];
+      const r = paths[`right${side}`];
+      expect(shape(l)).toBe(shape(r));
+      expect(sweeps(l).map((s, i) => s + sweeps(r)[i])).toEqual(sweeps(l).map(() => 1));
+    }
+  });
 });
 
 describe('LABEL_ANCHORS', () => {
-  it('places every label inside its own zone', () => {
+  it('places every zone label inside its own zone', () => {
+    expect(Object.keys(LABEL_ANCHORS)).toEqual(ZONES);
     for (const zone of ZONES) {
-      for (const { x, y } of LABEL_ANCHORS[zone]) expect(classifyZone(x, y)).toBe(zone);
+      const { x, y } = LABEL_ANCHORS[zone];
+      expect(classifyZone(x, y)).toBe(zone);
     }
+  });
+});
+
+describe('zoneLabel', () => {
+  it('shows FG% over made/attempts, and nothing for an empty zone', () => {
+    expect(zoneLabel({ made: 7, attempts: 12, pct: 58 })).toEqual({ pct: '58%', count: '7/12' });
+    expect(zoneLabel({ made: 0, attempts: 0, pct: null })).toEqual({ pct: '', count: '' });
   });
 });
 
@@ -1186,6 +1282,7 @@ describe('createCourt', () => {
   let container;
   let court;
   const zoneEl = (z) => court.svg.querySelector(`[data-zone="${z}"]`);
+  const label = (z) => court.svg.querySelector(`.labels text[data-zone="${z}"]`);
 
   beforeEach(() => {
     document.body.innerHTML = '<main id="court"></main>';
@@ -1193,40 +1290,52 @@ describe('createCourt', () => {
     court = createCourt(container);
   });
 
-  it('renders one svg with a path per zone and a no-data pattern', () => {
+  it('renders one svg with a path and a label per zone and a no-data pattern', () => {
     expect(container.querySelectorAll('svg')).toHaveLength(1);
     expect(court.svg.getAttribute('viewBox')).toBe('-7.5 -1.575 15 14');
-    const zones = [...court.svg.querySelectorAll('[data-zone]')].map((n) => n.getAttribute('data-zone'));
+    const zones = [...court.svg.querySelectorAll('path[data-zone]')].map((n) => n.getAttribute('data-zone'));
     expect(zones).toEqual(ZONES);
+    expect(court.svg.querySelectorAll('.labels text')).toHaveLength(14);
     expect(court.svg.querySelector('pattern#no-data')).not.toBeNull();
   });
 
-  it('tags zones with tone and confidence from stats', () => {
+  it('tags each zone with its own tone, confidence and label', () => {
     court.setZones(
       zoneStats([
-        shot(0, 0, 'paint', true),
-        shot(0, 0, 'paint', true),
-        shot(0, 0, 'paint', true),
-        shot(4.5, 1.6, 'mid', false),
+        shot(0, 0, 'restricted', true),
+        shot(0, 0, 'restricted', true),
+        shot(0, 0, 'restricted', true),
+        shot(0, 5.5, 'straightaway', false),
       ]),
     );
-    expect(zoneEl('paint').getAttribute('data-tone')).toBe('h3');
-    expect(zoneEl('paint').hasAttribute('data-low')).toBe(false);
-    expect(zoneEl('mid').getAttribute('data-tone')).toBe('c3');
-    expect(zoneEl('mid').hasAttribute('data-low')).toBe(true);
+    expect(zoneEl('restricted').getAttribute('data-tone')).toBe('h3');
+    expect(zoneEl('restricted').hasAttribute('data-low')).toBe(false);
+    expect(zoneEl('straightaway').getAttribute('data-tone')).toBe('c3');
+    expect(zoneEl('straightaway').hasAttribute('data-low')).toBe(true);
     expect(zoneEl('top3').getAttribute('data-tone')).toBe('empty');
-    const labels = [...court.svg.querySelectorAll('.labels text')].map((t) => t.textContent);
-    expect(labels).toContain('3/3 · 100%');
+    expect(label('restricted').querySelector('.pct').textContent).toBe('100%');
+    expect(label('restricted').querySelector('.count').textContent).toBe('3/3');
+    expect(label('top3').textContent).toBe('');
+  });
+
+  it('fills left and right zones independently', () => {
+    court.setZones(zoneStats([shot(-7, 0, 'leftCorner3', true), shot(7, 0, 'rightCorner3', false)]));
+    expect(zoneEl('leftCorner3').getAttribute('data-tone')).toBe('h3');
+    expect(zoneEl('rightCorner3').getAttribute('data-tone')).toBe('c3');
+    expect(label('leftCorner3').querySelector('.pct').textContent).toBe('100%');
+    expect(label('rightCorner3').querySelector('.pct').textContent).toBe('0%');
   });
 
   it('clears low confidence once a zone reaches 3 attempts', () => {
-    court.setZones(zoneStats([shot(0, 0, 'paint', true)]));
-    court.setZones(zoneStats([shot(0, 0, 'paint', true), shot(0, 0, 'paint', true), shot(0, 0, 'paint', true)]));
-    expect(zoneEl('paint').hasAttribute('data-low')).toBe(false);
+    court.setZones(zoneStats([shot(0, 0, 'restricted', true)]));
+    court.setZones(
+      zoneStats([shot(0, 0, 'restricted', true), shot(0, 0, 'restricted', true), shot(0, 0, 'restricted', true)]),
+    );
+    expect(zoneEl('restricted').hasAttribute('data-low')).toBe(false);
   });
 
   it('draws makes as dots and misses as crosses, and clears them', () => {
-    court.setDots([shot(0, 0, 'paint', true), shot(0, 8, 'top3', false)]);
+    court.setDots([shot(0, 0, 'restricted', true), shot(0, 8, 'top3', false)]);
     expect(court.svg.querySelectorAll('circle.dot.made')).toHaveLength(1);
     const miss = court.svg.querySelectorAll('g.dot.miss');
     expect(miss).toHaveLength(1);
@@ -1256,38 +1365,82 @@ Expected: FAIL, `src/court/render.js` isn't found.
 ```js
 import { COURT, ZONES } from './geometry.js';
 import { zoneTone } from '../heatmap.js';
-import { formatStat } from '../stats.js';
-
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const r4 = (n) => Number(n.toFixed(4));
 const MISS_ARM = 0.2; // half-length of each stroke in the miss ×, metres
 
-// Where each zone's stat label sits (court metres). Corner labels run vertically
+// Where each zone's two-line label sits (court metres). Corner labels run vertically
 // along the sideline because the corner strip is only 0.9 m wide.
 export const LABEL_ANCHORS = {
-  paint: [{ x: 0, y: 2.6 }],
-  mid: [{ x: -4.55, y: 1.6 }, { x: 4.55, y: 1.6 }],
-  corner3: [{ x: -7.05, y: 0, rotate: -90 }, { x: 7.05, y: 0, rotate: 90 }],
-  wing3: [{ x: -5.6, y: 6 }, { x: 5.6, y: 6 }],
-  top3: [{ x: 0, y: 9 }],
+  leftCorner3: { x: -7.05, y: 0, rotate: -90 },
+  leftWing3: { x: -5.6, y: 6 },
+  top3: { x: 0, y: 9 },
+  rightWing3: { x: 5.6, y: 6 },
+  rightCorner3: { x: 7.05, y: 0, rotate: 90 },
+  leftBaseline: { x: -4.55, y: 0.4 },
+  leftElbow: { x: -3.7, y: 4.6 },
+  straightaway: { x: 0, y: 5.5 },
+  rightElbow: { x: 3.7, y: 4.6 },
+  rightBaseline: { x: 4.55, y: 0.4 },
+  restricted: { x: 0, y: 0.7 },
+  leftShort: { x: -1.85, y: 1.9 },
+  shortCenter: { x: 0, y: 3 },
+  rightShort: { x: 1.85, y: 1.9 },
+};
+
+// 2K-style label: FG% on top, made/attempts underneath; empty zones show only the hatch.
+export function zoneLabel({ made, attempts, pct }) {
+  return attempts === 0 ? { pct: '', count: '' } : { pct: `${pct}%`, count: `${made}/${attempts}` };
+}
+
+// Point on a ray from the basket, `deg` from straight-on, at distance r.
+const onRay = (deg, r) => {
+  const a = (deg * Math.PI) / 180;
+  return [r4(r * Math.sin(a)), r4(r * Math.cos(a))];
 };
 
 export function zonePaths() {
   const { halfWidth: W, baselineY: B, halfCourtY: H, paintHalfWidth: P, paintTopY: PT, threeRadius: R, cornerX: CX } = COURT;
-  const a = (COURT.topAngleDeg * Math.PI) / 180;
+  const RA = COURT.restrictedRadius;
+  const c = COURT.centerAngleDeg;
+  const e = COURT.baselineAngleDeg;
   const by = r4(COURT.breakY);
-  const ax = r4(R * Math.sin(a)); // top/wing boundary meets the arc
-  const ay = r4(R * Math.cos(a));
-  const hx = r4(H * Math.tan(a)); // top/wing boundary meets half-court
-  const paintRect = `M ${-P} ${B} H ${P} V ${PT} H ${-P} Z`;
+  const [ax, ay] = onRay(c, R); // centre/side ray meets the arc
+  const hx = r4(H * Math.tan((c * Math.PI) / 180)); // ...meets half-court
+  const fx = r4(PT * Math.tan((c * Math.PI) / 180)); // ...meets the FT line
+  const [rx, ry] = onRay(c, RA); // ...meets the restricted-area arc
+  const [bx, bY] = onRay(e, R); // elbow/baseline ray meets the arc
+  const sy = r4(P / Math.tan((e * Math.PI) / 180)); // ...meets the paint side
+
+  // Side zones are drawn for s = +1 (right); s = -1 mirrors x and flips every arc's sweep.
+  const side = (s) => {
+    const X = (v) => r4(s * v);
+    const sw = (v) => (s > 0 ? v : 1 - v);
+    return {
+      Corner3: `M ${X(CX)} ${B} H ${X(W)} V ${by} H ${X(CX)} Z`,
+      Wing3: `M ${X(CX)} ${by} H ${X(W)} V ${H} H ${X(hx)} L ${X(ax)} ${ay} A ${R} ${R} 0 0 ${sw(0)} ${X(CX)} ${by} Z`,
+      Elbow: `M ${X(fx)} ${PT} L ${X(ax)} ${ay} A ${R} ${R} 0 0 ${sw(0)} ${X(bx)} ${bY} L ${X(P)} ${sy} V ${PT} Z`,
+      Baseline: `M ${X(P)} ${sy} L ${X(bx)} ${bY} A ${R} ${R} 0 0 ${sw(0)} ${X(CX)} ${by} V ${B} H ${X(P)} Z`,
+      Short: `M ${X(rx)} ${ry} L ${X(fx)} ${PT} H ${X(P)} V ${B} H 0 V ${-RA} A ${RA} ${RA} 0 0 ${sw(1)} ${X(rx)} ${ry} Z`,
+    };
+  };
+  const L = side(-1);
+  const Rt = side(1);
   return {
-    paint: paintRect,
-    mid: `M ${-CX} ${B} H ${CX} V ${by} A ${R} ${R} 0 0 1 ${-CX} ${by} Z ${paintRect}`,
-    corner3: `M ${-W} ${B} H ${-CX} V ${by} H ${-W} Z M ${CX} ${B} H ${W} V ${by} H ${CX} Z`,
-    wing3:
-      `M ${CX} ${by} H ${W} V ${H} H ${hx} L ${ax} ${ay} A ${R} ${R} 0 0 0 ${CX} ${by} Z ` +
-      `M ${-CX} ${by} H ${-W} V ${H} H ${-hx} L ${-ax} ${ay} A ${R} ${R} 0 0 1 ${-CX} ${by} Z`,
+    leftCorner3: L.Corner3,
+    leftWing3: L.Wing3,
     top3: `M ${ax} ${ay} L ${hx} ${H} H ${-hx} L ${-ax} ${ay} A ${R} ${R} 0 0 0 ${ax} ${ay} Z`,
+    rightWing3: Rt.Wing3,
+    rightCorner3: Rt.Corner3,
+    leftBaseline: L.Baseline,
+    leftElbow: L.Elbow,
+    straightaway: `M ${-fx} ${PT} H ${fx} L ${ax} ${ay} A ${R} ${R} 0 0 1 ${-ax} ${ay} Z`,
+    rightElbow: Rt.Elbow,
+    rightBaseline: Rt.Baseline,
+    restricted: `M 0 ${-RA} A ${RA} ${RA} 0 1 1 0 ${RA} A ${RA} ${RA} 0 1 1 0 ${-RA} Z`,
+    leftShort: L.Short,
+    shortCenter: `M ${rx} ${ry} L ${fx} ${PT} H ${-fx} L ${-rx} ${ry} A ${RA} ${RA} 0 0 0 ${rx} ${ry} Z`,
+    rightShort: Rt.Short,
   };
 }
 
@@ -1364,18 +1517,21 @@ export function createCourt(container) {
       'data-tone': 'empty',
     });
     zonesG.append(zoneEls[zone]);
-    labelEls[zone] = LABEL_ANCHORS[zone].map(({ x, y, rotate }) => {
-      const text = el('text', {
-        x,
-        y,
-        'font-size': zone === 'corner3' ? 0.4 : 0.5,
-        'text-anchor': 'middle',
-        'dominant-baseline': 'middle',
-        transform: rotate ? `rotate(${rotate} ${x} ${y})` : '',
-      });
-      labelsG.append(text);
-      return text;
+    const { x, y, rotate } = LABEL_ANCHORS[zone];
+    const narrow = rotate !== undefined; // corner strips: smaller type
+    const text = el('text', {
+      x,
+      y,
+      'data-zone': zone,
+      'text-anchor': 'middle',
+      'dominant-baseline': 'middle',
+      transform: rotate ? `rotate(${rotate} ${x} ${y})` : '',
     });
+    const pct = el('tspan', { x, dy: -0.18, class: 'pct', 'font-size': narrow ? 0.4 : 0.5 });
+    const count = el('tspan', { x, dy: narrow ? 0.42 : 0.5, class: 'count', 'font-size': narrow ? 0.3 : 0.38 });
+    text.append(pct, count);
+    labelsG.append(text);
+    labelEls[zone] = { pct, count };
   }
 
   for (const d of courtLinePaths()) linesG.append(el('path', { d }));
@@ -1395,7 +1551,9 @@ export function createCourt(container) {
         const { tone, lowConfidence } = zoneTone(zone, stats[zone]);
         zoneEls[zone].setAttribute('data-tone', tone);
         zoneEls[zone].toggleAttribute('data-low', lowConfidence);
-        for (const t of labelEls[zone]) t.textContent = formatStat(stats[zone]);
+        const { pct, count } = zoneLabel(stats[zone]);
+        labelEls[zone].pct.textContent = pct;
+        labelEls[zone].count.textContent = count;
       }
     },
     setDots(shots) {

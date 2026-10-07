@@ -20,6 +20,7 @@
 - **Status:** in_progress
 - Branch: feat/shot-tracker
 - Task 1 complete: project setup, installed deps, court/geometry.js. Tests: geometry 26/26 pass.
+- Task 2 complete: stats.js (pct, zoneStats, totals, formatStat). Tests: 7/7.
 
 ### Phase 2: State & Persistence
 
@@ -38,6 +39,7 @@
 | Test | Input | Expected | Actual | Status |
 |------|-------|----------|--------|--------|
 | geometry.test.js | Task 1 | pass | 26/26 | pass |
+| stats.test.js | Task 2 | pass | 7/7 | pass |
 
 ## Error Log
 

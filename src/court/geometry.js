@@ -13,7 +13,9 @@ export const COURT = {
   threeRadius: THREE_RADIUS,
   cornerX: CORNER_X,
   breakY: Math.sqrt(THREE_RADIUS ** 2 - CORNER_X ** 2), // ≈ 1.415 (2.99 m from baseline)
-  topAngleDeg: 22.5,
+  restrictedRadius: 1.25, // FIBA no-charge semicircle
+  centerAngleDeg: 22.5, // centre wedges (top3, straightaway, shortCenter) vs side wedges
+  baselineAngleDeg: 67.5, // mid-range elbow vs baseline
   ftCircleRadius: 1.8,
   centerCircleRadius: 1.8,
   rimRadius: 0.225,
@@ -21,8 +23,13 @@ export const COURT = {
   backboardHalfWidth: 0.9,
 };
 
-export const ZONES = ['paint', 'mid', 'corner3', 'wing3', 'top3'];
-export const THREE_POINT_ZONES = new Set(['corner3', 'wing3', 'top3']);
+// NBA 2K-style hot zones, left/right separate. "Left" is the shooter's left facing the basket (x < 0).
+export const ZONES = [
+  'leftCorner3', 'leftWing3', 'top3', 'rightWing3', 'rightCorner3',
+  'leftBaseline', 'leftElbow', 'straightaway', 'rightElbow', 'rightBaseline',
+  'restricted', 'leftShort', 'shortCenter', 'rightShort',
+];
+export const THREE_POINT_ZONES = new Set(['leftCorner3', 'leftWing3', 'top3', 'rightWing3', 'rightCorner3']);
 
 export function isInBounds(x, y) {
   return (
@@ -40,13 +47,22 @@ export function isThree(x, y) {
   return Math.hypot(x, y) > COURT.threeRadius;
 }
 
+const inPaint = (x, y) => Math.abs(x) <= COURT.paintHalfWidth && y <= COURT.paintTopY;
+
 export function classifyZone(x, y) {
   if (!isInBounds(x, y)) return null;
+  const side = x < 0 ? 'left' : 'right';
+  // Angle from straight-on toward half-court: 0° = centre, 180° = behind the basket.
+  const deg = (Math.abs(Math.atan2(x, y)) * 180) / Math.PI;
+  const centre = deg <= COURT.centerAngleDeg;
   if (isThree(x, y)) {
-    if (y <= COURT.breakY) return 'corner3';
-    const angle = (Math.abs(Math.atan2(x, y)) * 180) / Math.PI;
-    return angle <= COURT.topAngleDeg ? 'top3' : 'wing3';
+    if (y <= COURT.breakY) return `${side}Corner3`;
+    return centre ? 'top3' : `${side}Wing3`;
   }
-  if (Math.abs(x) <= COURT.paintHalfWidth && y <= COURT.paintTopY) return 'paint';
-  return 'mid';
+  if (inPaint(x, y)) {
+    if (Math.hypot(x, y) <= COURT.restrictedRadius) return 'restricted';
+    return centre ? 'shortCenter' : `${side}Short`;
+  }
+  if (centre) return 'straightaway';
+  return deg <= COURT.baselineAngleDeg ? `${side}Elbow` : `${side}Baseline`;
 }

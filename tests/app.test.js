@@ -24,7 +24,7 @@ describe('createApp', () => {
     app.logShot(0, 0, true);
     const snap = app.getSnapshot();
     expect(snap.totals).toEqual({ made: 1, attempts: 1, pct: 100 });
-    expect(snap.zones.paint.attempts).toBe(1);
+    expect(snap.zones.restricted.attempts).toBe(1);
     expect(snap.canUndo).toBe(true);
     expect(createApp({ storage, now: clock() }).getSnapshot().totals.attempts).toBe(1);
   });
@@ -68,7 +68,7 @@ describe('createApp', () => {
     app.setView('all');
     const snap = app.getSnapshot();
     expect(snap.shots).toHaveLength(2);
-    expect(snap.zones.paint.attempts).toBe(1);
+    expect(snap.zones.restricted.attempts).toBe(1);
     expect(snap.zones.top3.attempts).toBe(1);
     expect(snap.canUndo).toBe(true); // undo always targets the current session
   });

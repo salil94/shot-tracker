@@ -24,14 +24,14 @@
 - Vanilla JS ES modules + Vite. No UI framework. Runtime packages are limited to the two Fontsource fonts and `@phosphor-icons/core`.
 - FIBA court in metres. Origin = basket centre, +y toward half-court, baseline y = −1.575, half-court line y = 12.425, x ∈ [−7.5, 7.5].
 - Paint 4.9 m wide × 5.8 m from baseline. 3pt arc radius 6.75. Corner lines at |x| = 6.6. Corner/arc break y = √(6.75² − 6.6²) ≈ 1.415.
-- Zone ids exactly: `paint`, `mid`, `corner3`, `wing3`, `top3`. A shot on the 3pt line counts as 2. Top/wing split at 22.5° from straight-on.
+- 14 zone ids exactly (NBA 2K hot zones, left/right separate): 3PT `leftCorner3 leftWing3 top3 rightWing3 rightCorner3`; mid `leftBaseline leftElbow straightaway rightElbow rightBaseline`; close `restricted leftShort shortCenter rightShort`. Wedges are angles from the basket at 22.5° (center/side) and 67.5° (elbow/baseline), mirrored. Restricted area radius 1.25. A shot on the 3pt line counts as 2.
 - Heatmap anchors: 2pt cold ≤ 30% / hot ≥ 60%; 3pt cold ≤ 20% / hot ≥ 45%. 7 diverging bins `c3 c2 c1 n h1 h2 h3`. 0 attempts = hatched; 1–2 attempts = 35% fill-opacity.
 - Heat tokens (validated in OKLCH: lightness changes steadily on each side and the two sides mirror; the poles' colourblind ΔE is ≈ 19):
   - light `c3 #1c5cab  c2 #5598e7  c1 #9ec5f4  n #f0efec  h1 #f3ada7  h2 #e06e68  h3 #a1302f`
   - dark  `c3 #5598e7  c2 #2a78d6  c1 #1c5cab  n #383835  h1 #a1302f  h2 #ca4442  h3 #e06e68`
 - localStorage key `shot-tracker:v1`, schema `version: 1`. Corrupt data is backed up to `shot-tracker:corrupt-<timestamp>`.
 - Popover buttons ≥ 56 px. Primary viewport 390×844 portrait.
-- Out of scope: export, trends, session history list, PWA, left/right split.
+- Out of scope: export, trends, session history list, PWA.
 - TDD: every module with logic gets its failing test first. Commit after each task.
 
 ## Review Focus
@@ -82,7 +82,7 @@ Note: the spec put session operations inside `store.js`. This plan splits them i
 - Test: `tests/geometry.test.js`
 
 **Interfaces:**
-- Produces: `COURT` (object of numeric constants, see code), `ZONES: string[]`, `THREE_POINT_ZONES: Set<string>`, `isInBounds(x, y): boolean`, `isThree(x, y): boolean`, `classifyZone(x, y): 'paint'|'mid'|'corner3'|'wing3'|'top3'|null`
+- Produces: `COURT` (object of numeric constants incl. `restrictedRadius`, `centerAngleDeg`, `baselineAngleDeg`; see code), `ZONES: string[]` (the 14 hot-zone ids, 3PT then mid then close, left→right), `THREE_POINT_ZONES: Set<string>`, `isInBounds(x, y): boolean`, `isThree(x, y): boolean`, `classifyZone(x, y): ZoneId | null`
 
 - [ ] **Step 1: Create project files**
 
@@ -132,8 +132,9 @@ Expected: `package.json` has `devDependencies` (vite, vitest, jsdom) and `depend
 
 ```js
 import { describe, it, expect } from 'vitest';
-import { COURT, ZONES, classifyZone, isInBounds, isThree } from '../src/court/geometry.js';
+import { COURT, ZONES, THREE_POINT_ZONES, classifyZone, isInBounds, isThree } from '../src/court/geometry.js';
 
+// Point at distance r from the basket, deg from straight-on (negative = shooter's left).
 const atAngle = (deg, r) => {
   const a = (deg * Math.PI) / 180;
   return [r * Math.sin(a), r * Math.cos(a)];
@@ -143,8 +144,15 @@ describe('COURT', () => {
   it('puts the corner/arc break 2.99 m from the baseline (FIBA)', () => {
     expect(COURT.breakY - COURT.baselineY).toBeCloseTo(2.99, 2);
   });
-  it('lists the five zones', () => {
-    expect(ZONES).toEqual(['paint', 'mid', 'corner3', 'wing3', 'top3']);
+  it('lists the 14 hot zones: 3PT, mid-range, close', () => {
+    expect(ZONES).toEqual([
+      'leftCorner3', 'leftWing3', 'top3', 'rightWing3', 'rightCorner3',
+      'leftBaseline', 'leftElbow', 'straightaway', 'rightElbow', 'rightBaseline',
+      'restricted', 'leftShort', 'shortCenter', 'rightShort',
+    ]);
+  });
+  it('marks exactly the five 3PT zones as threes', () => {
+    expect([...THREE_POINT_ZONES]).toEqual(['leftCorner3', 'leftWing3', 'top3', 'rightWing3', 'rightCorner3']);
   });
 });
 
@@ -171,35 +179,77 @@ describe('isThree', () => {
 
 describe('classifyZone', () => {
   it.each([
-    // paint (edges inclusive)
-    [0, 0, 'paint'],
-    [2.45, 4.225, 'paint'],
-    [-2.45, -1.575, 'paint'],
-    // mid-range
-    [2.46, 0, 'mid'],
-    [0, 4.23, 'mid'],
-    [0, 6.75, 'mid'], // exactly on the arc
-    [6.6, 0, 'mid'], // exactly on the corner line
-    [4.55, 1.6, 'mid'],
-    // corner 3 (y <= break)
-    [6.61, 0, 'corner3'],
-    [-6.61, -1.5, 'corner3'],
-    [7.4, 1.41, 'corner3'],
-    // above the break, beyond the arc
-    [6.7, 1.5, 'wing3'],
-    [7.4, 12, 'wing3'],
-    // straight on
+    // close: restricted area (r <= 1.25, edge inclusive), behind the basket too
+    [0, 0, 'restricted'],
+    [0, 1.25, 'restricted'],
+    [0, -1.2, 'restricted'],
+    // close: short center (within 22.5°, up to the FT line)
+    [0, 1.26, 'shortCenter'],
+    [0, 4.225, 'shortCenter'],
+    // close: left/right short (rest of the paint, edges inclusive)
+    [2.45, 4.225, 'rightShort'],
+    [-2.45, 4.225, 'leftShort'],
+    [-2.45, -1.575, 'leftShort'],
+    [1.5, 0, 'rightShort'],
+    [0.1, -1.4, 'rightShort'], // behind the basket, outside the restricted area
+    // mid-range: straightaway (above the FT line, within 22.5°)
+    [0, 4.23, 'straightaway'],
+    [0, 6.75, 'straightaway'], // exactly on the arc
+    // mid-range: elbows and baselines
+    [2.46, 4, 'rightElbow'],
+    [-3.6, 4.4, 'leftElbow'],
+    [4.6, 0.3, 'rightBaseline'],
+    [-6.6, 0, 'leftBaseline'], // exactly on the corner line
+    [-4, -1.5, 'leftBaseline'], // behind the basket, outside the paint
+    // 3PT
+    [6.61, 0, 'rightCorner3'],
+    [-6.61, -1.5, 'leftCorner3'],
+    [-7.4, 1.41, 'leftCorner3'],
+    [6.7, 1.5, 'rightWing3'],
+    [-7.4, 12, 'leftWing3'],
     [0, 6.76, 'top3'],
     [0, 12, 'top3'],
   ])('(%s, %s) → %s', (x, y, zone) => {
     expect(classifyZone(x, y)).toBe(zone);
   });
 
-  it('splits top/wing at 22.5° from straight-on, both sides', () => {
+  it('splits center/side wedges at 22.5° in every ring, mirrored', () => {
+    // 3PT
     expect(classifyZone(...atAngle(22, 8))).toBe('top3');
-    expect(classifyZone(...atAngle(-22, 8))).toBe('top3');
-    expect(classifyZone(...atAngle(23, 8))).toBe('wing3');
-    expect(classifyZone(...atAngle(-23, 8))).toBe('wing3');
+    expect(classifyZone(...atAngle(23, 8))).toBe('rightWing3');
+    expect(classifyZone(...atAngle(-23, 8))).toBe('leftWing3');
+    // mid-range
+    expect(classifyZone(...atAngle(-22, 5.5))).toBe('straightaway');
+    expect(classifyZone(...atAngle(23, 5.5))).toBe('rightElbow');
+    expect(classifyZone(...atAngle(-23, 5.5))).toBe('leftElbow');
+    // close
+    expect(classifyZone(...atAngle(22, 3))).toBe('shortCenter');
+    expect(classifyZone(...atAngle(23, 3))).toBe('rightShort');
+    expect(classifyZone(...atAngle(-23, 3))).toBe('leftShort');
+  });
+
+  it('splits mid-range elbow/baseline at 67.5°, mirrored', () => {
+    expect(classifyZone(...atAngle(67, 5))).toBe('rightElbow');
+    expect(classifyZone(...atAngle(68, 5))).toBe('rightBaseline');
+    expect(classifyZone(...atAngle(-67, 5))).toBe('leftElbow');
+    expect(classifyZone(...atAngle(-68, 5))).toBe('leftBaseline');
+  });
+
+  it('mirrors every zone left/right', () => {
+    const mirror = (z) => z.replace(/^left/, 'RIGHT').replace(/^right/, 'left').replace(/^RIGHT/, 'right');
+    for (let x = 0.3; x <= 7.4; x += 0.35) {
+      for (let y = -1.5; y <= 12.4; y += 0.35) {
+        expect(classifyZone(-x, y)).toBe(mirror(classifyZone(x, y)));
+      }
+    }
+  });
+
+  it('reaches all 14 zones', () => {
+    const seen = new Set();
+    for (let x = -7.45; x <= 7.45; x += 0.1) {
+      for (let y = -1.55; y <= 12.4; y += 0.1) seen.add(classifyZone(x, y));
+    }
+    expect([...seen].sort()).toEqual([...ZONES].sort());
   });
 
   it.each([
@@ -237,7 +287,9 @@ export const COURT = {
   threeRadius: THREE_RADIUS,
   cornerX: CORNER_X,
   breakY: Math.sqrt(THREE_RADIUS ** 2 - CORNER_X ** 2), // ≈ 1.415 (2.99 m from baseline)
-  topAngleDeg: 22.5,
+  restrictedRadius: 1.25, // FIBA no-charge semicircle
+  centerAngleDeg: 22.5, // centre wedges (top3, straightaway, shortCenter) vs side wedges
+  baselineAngleDeg: 67.5, // mid-range elbow vs baseline
   ftCircleRadius: 1.8,
   centerCircleRadius: 1.8,
   rimRadius: 0.225,
@@ -245,8 +297,13 @@ export const COURT = {
   backboardHalfWidth: 0.9,
 };
 
-export const ZONES = ['paint', 'mid', 'corner3', 'wing3', 'top3'];
-export const THREE_POINT_ZONES = new Set(['corner3', 'wing3', 'top3']);
+// NBA 2K-style hot zones, left/right separate. "Left" is the shooter's left facing the basket (x < 0).
+export const ZONES = [
+  'leftCorner3', 'leftWing3', 'top3', 'rightWing3', 'rightCorner3',
+  'leftBaseline', 'leftElbow', 'straightaway', 'rightElbow', 'rightBaseline',
+  'restricted', 'leftShort', 'shortCenter', 'rightShort',
+];
+export const THREE_POINT_ZONES = new Set(['leftCorner3', 'leftWing3', 'top3', 'rightWing3', 'rightCorner3']);
 
 export function isInBounds(x, y) {
   return (
@@ -264,15 +321,24 @@ export function isThree(x, y) {
   return Math.hypot(x, y) > COURT.threeRadius;
 }
 
+const inPaint = (x, y) => Math.abs(x) <= COURT.paintHalfWidth && y <= COURT.paintTopY;
+
 export function classifyZone(x, y) {
   if (!isInBounds(x, y)) return null;
+  const side = x < 0 ? 'left' : 'right';
+  // Angle from straight-on toward half-court: 0° = centre, 180° = behind the basket.
+  const deg = (Math.abs(Math.atan2(x, y)) * 180) / Math.PI;
+  const centre = deg <= COURT.centerAngleDeg;
   if (isThree(x, y)) {
-    if (y <= COURT.breakY) return 'corner3';
-    const angle = (Math.abs(Math.atan2(x, y)) * 180) / Math.PI;
-    return angle <= COURT.topAngleDeg ? 'top3' : 'wing3';
+    if (y <= COURT.breakY) return `${side}Corner3`;
+    return centre ? 'top3' : `${side}Wing3`;
   }
-  if (Math.abs(x) <= COURT.paintHalfWidth && y <= COURT.paintTopY) return 'paint';
-  return 'mid';
+  if (inPaint(x, y)) {
+    if (Math.hypot(x, y) <= COURT.restrictedRadius) return 'restricted';
+    return centre ? 'shortCenter' : `${side}Short`;
+  }
+  if (centre) return 'straightaway';
+  return deg <= COURT.baselineAngleDeg ? `${side}Elbow` : `${side}Baseline`;
 }
 ```
 

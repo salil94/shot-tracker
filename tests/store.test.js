@@ -28,7 +28,7 @@ describe('load', () => {
     ];
     const storage = memoryStorage({ [STORAGE_KEY]: JSON.stringify(s) });
     const { state } = load(storage, T0);
-    expect(currentSession(state).shots).toEqual([{ x: 0, y: 0, made: true, zone: 'paint', t: T0 }]);
+    expect(currentSession(state).shots).toEqual([{ x: 0, y: 0, made: true, zone: 'restricted', t: T0 }]);
   });
 
   // Review Focus #3: valid JSON, wrong shape → backup + fresh start, never a crash.

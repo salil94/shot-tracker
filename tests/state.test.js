@@ -32,7 +32,7 @@ describe('addShot', () => {
   it('appends a classified shot to the current session without mutating', () => {
     const s0 = createState(T0);
     const s1 = addShot(s0, { x: 0, y: 0, made: true }, T0 + 1);
-    expect(currentSession(s1).shots).toEqual([{ x: 0, y: 0, made: true, zone: 'paint', t: T0 + 1 }]);
+    expect(currentSession(s1).shots).toEqual([{ x: 0, y: 0, made: true, zone: 'restricted', t: T0 + 1 }]);
     expect(currentSession(s0).shots).toEqual([]);
   });
 
@@ -49,7 +49,7 @@ describe('undoLastShot', () => {
     s = addShot(s, { x: 0, y: 0, made: true }, T0);
     s = addShot(s, { x: 0, y: 8, made: false }, T0);
     s = undoLastShot(s);
-    expect(currentSession(s).shots.map((x) => x.zone)).toEqual(['paint']);
+    expect(currentSession(s).shots.map((x) => x.zone)).toEqual(['restricted']);
   });
 
   it('returns the same state when there is nothing to undo', () => {
@@ -79,6 +79,6 @@ describe('allShots', () => {
     let s = addShot(createState(T0), { x: 0, y: 0, made: true }, T0);
     s = startNewSession(s, T0 + 1);
     s = addShot(s, { x: 0, y: 8, made: false }, T0 + 2);
-    expect(allShots(s).map((x) => x.zone)).toEqual(['paint', 'top3']);
+    expect(allShots(s).map((x) => x.zone)).toEqual(['restricted', 'top3']);
   });
 });

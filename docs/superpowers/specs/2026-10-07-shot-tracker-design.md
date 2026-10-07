@@ -26,12 +26,12 @@ In:
 - Tap court → Make/Miss popover → shot logged (with x/y, zone, timestamp).
 - Undo last shot (current session).
 - Sessions: one current session; "New session" starts another.
-- Heatmap of FG% over 5 zones: paint, mid-range, corner 3, wing 3, top 3
-  (left/right combined). Toggle **Current session / All-time**.
-- Per-zone label "made/attempts · pct%"; session totals bar.
+- Heatmap of FG% over **14 NBA 2K-style hot zones**, left and right separate (see Court geometry).
+  Toggle **Current session / All-time**.
+- Per-zone two-line label: FG% (large) over made/attempts (small); empty zones are unlabeled. Session totals bar.
 
 Out (YAGNI): export, trends/charts over time, session history list, PWA/offline install,
-left/right zone split, multiple players.
+multiple players.
 
 ## Architecture
 
@@ -84,17 +84,22 @@ from the baseline toward half-court. Baseline is at y = −1.575.
 | 3pt corner lines | \|x\| = 6.6, from baseline up to where they meet the arc |
 | Corner/arc break | y = √(6.75² − 6.6²) ≈ 1.415 (≈ 2.99 m from baseline) |
 
-### `classifyZone(x, y)`
+### `classifyZone(x, y)` (14 zones, NBA 2K hot-zone layout)
+
+Angles are measured from the basket, from straight-on: `θ = |atan2(x, y)|` in degrees (0° = toward
+half-court, 180° = behind the basket). Side: `x < 0` → left (the shooter's left when facing the basket),
+otherwise right. Left and right mirror each other.
 
 1. Outside half-court bounds → `null` (tap ignored).
-2. Three-pointer if `|x| > 6.6` (when `y ≤ 1.415`) or `√(x²+y²) > 6.75` (when `y > 1.415`).
-   A shot exactly on the line is **two points**.
-3. Three-pointers:
-   - `y ≤ 1.415` → `corner3`
-   - else angle from straight-on `|atan2(x, y)| ≤ 22.5°` → `top3`, otherwise `wing3`
-4. Two-pointers: `|x| ≤ 2.45` and `y ≤ 4.225` → `paint`; otherwise `mid`.
+2. **3PT** (beyond the line; on the line = two): `y ≤ 1.415` → left/right **corner**; else `θ ≤ 22.5°` →
+   **top of key**; else left/right **wing**.
+3. **Close** (inside the paint, `|x| ≤ 2.45`, `y ≤ 4.225`): `√(x²+y²) ≤ 1.25` (FIBA no-charge semicircle)
+   → **restricted area**; else `θ ≤ 22.5°` → **short center** (up to the FT line); else left/right **short**.
+4. **Mid-range** (inside the arc, outside the paint): `θ ≤ 22.5°` → **straightaway**; `θ ≤ 67.5°` →
+   left/right **elbow**; else left/right **baseline**.
 
-Zone ids: `paint`, `mid`, `corner3`, `wing3`, `top3`.
+Zone ids (14): 3PT `leftCorner3 leftWing3 top3 rightWing3 rightCorner3`; mid-range `leftBaseline leftElbow
+straightaway rightElbow rightBaseline`; close `restricted leftShort shortCenter rightShort`.
 
 ## UI
 
@@ -126,8 +131,8 @@ Per-zone fill on a **diverging blue↔red scale with a neutral grey midpoint**, 
 
 | Zone type | Cold at | Hot at |
 |---|---|---|
-| 2pt (paint, mid) | ≤ 30% | ≥ 60% |
-| 3pt (corner3, wing3, top3) | ≤ 20% | ≥ 45% |
+| 2pt (mid-range and close zones) | ≤ 30% | ≥ 60% |
+| 3pt (corners, wings, top3) | ≤ 20% | ≥ 45% |
 
 - 0 attempts → diagonal hatch (so "no data" never reads as "average").
 - 1–2 attempts → tone at 35% fill-opacity (low confidence).

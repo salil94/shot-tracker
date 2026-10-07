@@ -81,6 +81,18 @@ describe('createShotPicker', () => {
     expect(picker.isOpen()).toBe(false);
   });
 
+  // Found in manual check: the entrance animation scales the panel to 96%, so a
+  // transformed getBoundingClientRect under-measures it and the panel overflows the edge.
+  it('positions with the untransformed layout size, not the animated rect', () => {
+    const panel = picker.element.querySelector('.picker');
+    Object.defineProperty(window, 'innerWidth', { value: 390, configurable: true });
+    Object.defineProperty(panel, 'offsetWidth', { value: 249, configurable: true });
+    Object.defineProperty(panel, 'offsetHeight', { value: 74, configurable: true });
+    panel.getBoundingClientRect = () => ({ width: 239, height: 71 });
+    picker.open({ clientX: 385, clientY: 400 }, onChoose, onCancel);
+    expect(panel.style.left).toBe(`${390 - 249 - 8}px`);
+  });
+
   it('cancels the previous shot if reopened', () => {
     picker.open({ clientX: 100, clientY: 100 }, onChoose, onCancel);
     const second = vi.fn();

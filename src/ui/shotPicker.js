@@ -57,10 +57,10 @@ export function createShotPicker(root = document.body) {
       finish('cancel');
       handlers = { onChoose, onCancel };
       backdrop.hidden = false;
-      const rect = panel.getBoundingClientRect();
+      // offsetWidth/Height ignore the entrance animation's scale transform.
       const { left, top } = placePopover(
         { x: clientX, y: clientY },
-        { width: rect.width, height: rect.height },
+        { width: panel.offsetWidth, height: panel.offsetHeight },
         { vw: window.innerWidth, vh: window.innerHeight },
       );
       panel.style.left = `${left}px`;

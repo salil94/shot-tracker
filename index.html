@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#f4f4f5" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#09090b" media="(prefers-color-scheme: dark)" />
+    <title>Shot Tracker</title>
+  </head>
+  <body>
+    <div id="app">
+      <header class="bar">
+        <h1 class="title">Session <span id="session-date"></span></h1>
+        <button id="new-session" type="button"><span class="icon" data-icon="plus" aria-hidden="true"></span>New session</button>
+      </header>
+
+      <div id="banner" class="banner" role="status" hidden>
+        <span class="icon" data-icon="warning" aria-hidden="true"></span>
+        <span id="banner-text"></span>
+        <button id="banner-dismiss" type="button" aria-label="Dismiss"><span class="icon" data-icon="x" aria-hidden="true"></span></button>
+      </div>
+
+      <section class="bar">
+        <div id="totals" class="stat" aria-live="polite">0/0</div>
+        <div class="toggle" role="group" aria-label="Stats range">
+          <button type="button" data-view="current" aria-pressed="true">This session</button>
+          <button type="button" data-view="all" aria-pressed="false">All time</button>
+        </div>
+      </section>
+
+      <main id="court" class="court">
+        <p id="hint" class="hint" hidden>Tap where you shot from</p>
+      </main>
+
+      <figure class="legend" aria-label="Heatmap key">
+        <div class="scale">
+          <span>Cold</span>
+          <span class="swatches" aria-hidden="true">
+            <i data-tone="c3"></i><i data-tone="c2"></i><i data-tone="c1"></i><i data-tone="n"></i><i data-tone="h1"></i><i data-tone="h2"></i><i data-tone="h3"></i>
+          </span>
+          <span>Hot</span>
+        </div>
+        <div class="marks">
+          <span><svg class="mark-key" viewBox="-0.3 -0.3 0.6 0.6" aria-hidden="true"><circle class="dot made" r="0.2" /></svg>Make</span>
+          <span><svg class="mark-key" viewBox="-0.3 -0.3 0.6 0.6" aria-hidden="true"><g class="dot miss"><path class="halo" d="M -0.2 -0.2 L 0.2 0.2 M 0.2 -0.2 L -0.2 0.2" /><path class="ink" d="M -0.2 -0.2 L 0.2 0.2 M 0.2 -0.2 L -0.2 0.2" /></g></svg>Miss</span>
+          <span><i class="swatch-empty" aria-hidden="true"></i>No shots</span>
+        </div>
+        <figcaption>Each zone is compared with a typical FG% for that shot. Faded zones have fewer than 3 shots.</figcaption>
+      </figure>
+
+      <footer class="bar bottom">
+        <button id="undo" type="button" disabled><span class="icon" data-icon="undo" aria-hidden="true"></span>Undo</button>
+      </footer>
+    </div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

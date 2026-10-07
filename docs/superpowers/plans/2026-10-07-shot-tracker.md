@@ -1215,11 +1215,12 @@ git commit -m "feat: app controller with immediate persistence"
 - Test: `tests/render.test.js`
 
 **Interfaces:**
-- Consumes: `COURT`, `ZONES`, `classifyZone` (geometry), `zoneTone` (heatmap), `formatStat` (stats)
+- Consumes: `COURT` (incl. `restrictedRadius`, `centerAngleDeg`, `baselineAngleDeg`), `ZONES`, `classifyZone` (geometry), `zoneTone` (heatmap)
 - Produces:
-  - `zonePaths(): { [zone]: string }`, SVG path data in court metres. `mid` uses `fill-rule="evenodd"` with the paint as a hole.
+  - `zonePaths(): { [zone]: string }` for all 14 zones, SVG path data in court metres. Side zones are generated once and mirrored (x negated, arc sweeps flipped); wedge edges are rays from the basket at 22.5° and 67.5°.
   - `courtLinePaths(): string[]`
-  - `LABEL_ANCHORS: { [zone]: Array<{ x, y, rotate? }> }`
+  - `LABEL_ANCHORS: { [zone]: { x, y, rotate? } }` (one per zone; corners rotated)
+  - `zoneLabel({ made, attempts, pct }): { pct: '58%', count: '7/12' }` (both `''` for an empty zone). Each label is a `<text data-zone>` with `.pct` and `.count` tspans.
   - `createCourt(container): { svg, setZones(zoneStats), setDots(shots), setGhost({x,y}|null), clientToCourt(clientX, clientY): {x,y} }`. `clientToCourt` returns `{NaN, NaN}` if the SVG has no screen CTM, and `classifyZone` rejects that.
 - Zone colour contract with CSS (Task 9): every zone path carries `data-tone="c3|c2|c1|n|h1|h2|h3|empty"` and, when there are fewer than 3 attempts, a boolean `data-low` attribute. CSS maps tones to `--heat-*` tokens. `empty` fills with the `#no-data` hatch pattern defined in this SVG.
 - Shot marks are encoded by **shape**: a make is `<circle class="dot made">`, and a miss is `<g class="dot miss">` holding two paths (`.halo`, `.ink`) that draw an ×.
@@ -1231,14 +1232,14 @@ SVG facts: `viewBox="-7.5 -1.575 15 14"`, so court coordinates and SVG user unit
 ```js
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach } from 'vitest';
-import { createCourt, zonePaths, LABEL_ANCHORS } from '../src/court/render.js';
+import { createCourt, zonePaths, zoneLabel, LABEL_ANCHORS } from '../src/court/render.js';
 import { ZONES, classifyZone } from '../src/court/geometry.js';
 import { zoneStats } from '../src/stats.js';
 
 const shot = (x, y, zone, made) => ({ x, y, zone, made, t: 0 });
 
 describe('zonePaths', () => {
-  it('has well-formed path data for every zone', () => {
+  it('has well-formed path data for all 14 zones', () => {
     const paths = zonePaths();
     expect(Object.keys(paths)).toEqual(ZONES);
     for (const d of Object.values(paths)) {
@@ -1246,13 +1247,34 @@ describe('zonePaths', () => {
       expect(d).not.toMatch(/NaN|undefined/);
     }
   });
+
+  it('mirrors left and right paths (same magnitudes, opposite arc sweeps)', () => {
+    const paths = zonePaths();
+    const sweeps = (d) => [...d.matchAll(/ A \S+ \S+ 0 [01] ([01]) /g)].map((m) => Number(m[1]));
+    const shape = (d) => d.replace(/ A (\S+) (\S+) 0 ([01]) [01] /g, ' A $1 $2 0 $3 S ').replace(/-/g, '');
+    for (const side of ['Corner3', 'Wing3', 'Elbow', 'Baseline', 'Short']) {
+      const l = paths[`left${side}`];
+      const r = paths[`right${side}`];
+      expect(shape(l)).toBe(shape(r));
+      expect(sweeps(l).map((s, i) => s + sweeps(r)[i])).toEqual(sweeps(l).map(() => 1));
+    }
+  });
 });
 
 describe('LABEL_ANCHORS', () => {
-  it('places every label inside its own zone', () => {
+  it('places every zone label inside its own zone', () => {
+    expect(Object.keys(LABEL_ANCHORS)).toEqual(ZONES);
     for (const zone of ZONES) {
-      for (const { x, y } of LABEL_ANCHORS[zone]) expect(classifyZone(x, y)).toBe(zone);
+      const { x, y } = LABEL_ANCHORS[zone];
+      expect(classifyZone(x, y)).toBe(zone);
     }
+  });
+});
+
+describe('zoneLabel', () => {
+  it('shows FG% over made/attempts, and nothing for an empty zone', () => {
+    expect(zoneLabel({ made: 7, attempts: 12, pct: 58 })).toEqual({ pct: '58%', count: '7/12' });
+    expect(zoneLabel({ made: 0, attempts: 0, pct: null })).toEqual({ pct: '', count: '' });
   });
 });
 
@@ -1260,6 +1282,7 @@ describe('createCourt', () => {
   let container;
   let court;
   const zoneEl = (z) => court.svg.querySelector(`[data-zone="${z}"]`);
+  const label = (z) => court.svg.querySelector(`.labels text[data-zone="${z}"]`);
 
   beforeEach(() => {
     document.body.innerHTML = '<main id="court"></main>';
@@ -1267,40 +1290,52 @@ describe('createCourt', () => {
     court = createCourt(container);
   });
 
-  it('renders one svg with a path per zone and a no-data pattern', () => {
+  it('renders one svg with a path and a label per zone and a no-data pattern', () => {
     expect(container.querySelectorAll('svg')).toHaveLength(1);
     expect(court.svg.getAttribute('viewBox')).toBe('-7.5 -1.575 15 14');
-    const zones = [...court.svg.querySelectorAll('[data-zone]')].map((n) => n.getAttribute('data-zone'));
+    const zones = [...court.svg.querySelectorAll('path[data-zone]')].map((n) => n.getAttribute('data-zone'));
     expect(zones).toEqual(ZONES);
+    expect(court.svg.querySelectorAll('.labels text')).toHaveLength(14);
     expect(court.svg.querySelector('pattern#no-data')).not.toBeNull();
   });
 
-  it('tags zones with tone and confidence from stats', () => {
+  it('tags each zone with its own tone, confidence and label', () => {
     court.setZones(
       zoneStats([
-        shot(0, 0, 'paint', true),
-        shot(0, 0, 'paint', true),
-        shot(0, 0, 'paint', true),
-        shot(4.5, 1.6, 'mid', false),
+        shot(0, 0, 'restricted', true),
+        shot(0, 0, 'restricted', true),
+        shot(0, 0, 'restricted', true),
+        shot(0, 5.5, 'straightaway', false),
       ]),
     );
-    expect(zoneEl('paint').getAttribute('data-tone')).toBe('h3');
-    expect(zoneEl('paint').hasAttribute('data-low')).toBe(false);
-    expect(zoneEl('mid').getAttribute('data-tone')).toBe('c3');
-    expect(zoneEl('mid').hasAttribute('data-low')).toBe(true);
+    expect(zoneEl('restricted').getAttribute('data-tone')).toBe('h3');
+    expect(zoneEl('restricted').hasAttribute('data-low')).toBe(false);
+    expect(zoneEl('straightaway').getAttribute('data-tone')).toBe('c3');
+    expect(zoneEl('straightaway').hasAttribute('data-low')).toBe(true);
     expect(zoneEl('top3').getAttribute('data-tone')).toBe('empty');
-    const labels = [...court.svg.querySelectorAll('.labels text')].map((t) => t.textContent);
-    expect(labels).toContain('3/3 · 100%');
+    expect(label('restricted').querySelector('.pct').textContent).toBe('100%');
+    expect(label('restricted').querySelector('.count').textContent).toBe('3/3');
+    expect(label('top3').textContent).toBe('');
+  });
+
+  it('fills left and right zones independently', () => {
+    court.setZones(zoneStats([shot(-7, 0, 'leftCorner3', true), shot(7, 0, 'rightCorner3', false)]));
+    expect(zoneEl('leftCorner3').getAttribute('data-tone')).toBe('h3');
+    expect(zoneEl('rightCorner3').getAttribute('data-tone')).toBe('c3');
+    expect(label('leftCorner3').querySelector('.pct').textContent).toBe('100%');
+    expect(label('rightCorner3').querySelector('.pct').textContent).toBe('0%');
   });
 
   it('clears low confidence once a zone reaches 3 attempts', () => {
-    court.setZones(zoneStats([shot(0, 0, 'paint', true)]));
-    court.setZones(zoneStats([shot(0, 0, 'paint', true), shot(0, 0, 'paint', true), shot(0, 0, 'paint', true)]));
-    expect(zoneEl('paint').hasAttribute('data-low')).toBe(false);
+    court.setZones(zoneStats([shot(0, 0, 'restricted', true)]));
+    court.setZones(
+      zoneStats([shot(0, 0, 'restricted', true), shot(0, 0, 'restricted', true), shot(0, 0, 'restricted', true)]),
+    );
+    expect(zoneEl('restricted').hasAttribute('data-low')).toBe(false);
   });
 
   it('draws makes as dots and misses as crosses, and clears them', () => {
-    court.setDots([shot(0, 0, 'paint', true), shot(0, 8, 'top3', false)]);
+    court.setDots([shot(0, 0, 'restricted', true), shot(0, 8, 'top3', false)]);
     expect(court.svg.querySelectorAll('circle.dot.made')).toHaveLength(1);
     const miss = court.svg.querySelectorAll('g.dot.miss');
     expect(miss).toHaveLength(1);
@@ -1330,38 +1365,82 @@ Expected: FAIL, `src/court/render.js` isn't found.
 ```js
 import { COURT, ZONES } from './geometry.js';
 import { zoneTone } from '../heatmap.js';
-import { formatStat } from '../stats.js';
-
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const r4 = (n) => Number(n.toFixed(4));
 const MISS_ARM = 0.2; // half-length of each stroke in the miss ×, metres
 
-// Where each zone's stat label sits (court metres). Corner labels run vertically
+// Where each zone's two-line label sits (court metres). Corner labels run vertically
 // along the sideline because the corner strip is only 0.9 m wide.
 export const LABEL_ANCHORS = {
-  paint: [{ x: 0, y: 2.6 }],
-  mid: [{ x: -4.55, y: 1.6 }, { x: 4.55, y: 1.6 }],
-  corner3: [{ x: -7.05, y: 0, rotate: -90 }, { x: 7.05, y: 0, rotate: 90 }],
-  wing3: [{ x: -5.6, y: 6 }, { x: 5.6, y: 6 }],
-  top3: [{ x: 0, y: 9 }],
+  leftCorner3: { x: -7.05, y: 0, rotate: -90 },
+  leftWing3: { x: -5.6, y: 6 },
+  top3: { x: 0, y: 9 },
+  rightWing3: { x: 5.6, y: 6 },
+  rightCorner3: { x: 7.05, y: 0, rotate: 90 },
+  leftBaseline: { x: -4.55, y: 0.4 },
+  leftElbow: { x: -3.7, y: 4.6 },
+  straightaway: { x: 0, y: 5.5 },
+  rightElbow: { x: 3.7, y: 4.6 },
+  rightBaseline: { x: 4.55, y: 0.4 },
+  restricted: { x: 0, y: 0.7 },
+  leftShort: { x: -1.85, y: 1.9 },
+  shortCenter: { x: 0, y: 3 },
+  rightShort: { x: 1.85, y: 1.9 },
+};
+
+// 2K-style label: FG% on top, made/attempts underneath; empty zones show only the hatch.
+export function zoneLabel({ made, attempts, pct }) {
+  return attempts === 0 ? { pct: '', count: '' } : { pct: `${pct}%`, count: `${made}/${attempts}` };
+}
+
+// Point on a ray from the basket, `deg` from straight-on, at distance r.
+const onRay = (deg, r) => {
+  const a = (deg * Math.PI) / 180;
+  return [r4(r * Math.sin(a)), r4(r * Math.cos(a))];
 };
 
 export function zonePaths() {
   const { halfWidth: W, baselineY: B, halfCourtY: H, paintHalfWidth: P, paintTopY: PT, threeRadius: R, cornerX: CX } = COURT;
-  const a = (COURT.topAngleDeg * Math.PI) / 180;
+  const RA = COURT.restrictedRadius;
+  const c = COURT.centerAngleDeg;
+  const e = COURT.baselineAngleDeg;
   const by = r4(COURT.breakY);
-  const ax = r4(R * Math.sin(a)); // top/wing boundary meets the arc
-  const ay = r4(R * Math.cos(a));
-  const hx = r4(H * Math.tan(a)); // top/wing boundary meets half-court
-  const paintRect = `M ${-P} ${B} H ${P} V ${PT} H ${-P} Z`;
+  const [ax, ay] = onRay(c, R); // centre/side ray meets the arc
+  const hx = r4(H * Math.tan((c * Math.PI) / 180)); // ...meets half-court
+  const fx = r4(PT * Math.tan((c * Math.PI) / 180)); // ...meets the FT line
+  const [rx, ry] = onRay(c, RA); // ...meets the restricted-area arc
+  const [bx, bY] = onRay(e, R); // elbow/baseline ray meets the arc
+  const sy = r4(P / Math.tan((e * Math.PI) / 180)); // ...meets the paint side
+
+  // Side zones are drawn for s = +1 (right); s = -1 mirrors x and flips every arc's sweep.
+  const side = (s) => {
+    const X = (v) => r4(s * v);
+    const sw = (v) => (s > 0 ? v : 1 - v);
+    return {
+      Corner3: `M ${X(CX)} ${B} H ${X(W)} V ${by} H ${X(CX)} Z`,
+      Wing3: `M ${X(CX)} ${by} H ${X(W)} V ${H} H ${X(hx)} L ${X(ax)} ${ay} A ${R} ${R} 0 0 ${sw(0)} ${X(CX)} ${by} Z`,
+      Elbow: `M ${X(fx)} ${PT} L ${X(ax)} ${ay} A ${R} ${R} 0 0 ${sw(0)} ${X(bx)} ${bY} L ${X(P)} ${sy} V ${PT} Z`,
+      Baseline: `M ${X(P)} ${sy} L ${X(bx)} ${bY} A ${R} ${R} 0 0 ${sw(0)} ${X(CX)} ${by} V ${B} H ${X(P)} Z`,
+      Short: `M ${X(rx)} ${ry} L ${X(fx)} ${PT} H ${X(P)} V ${B} H 0 V ${-RA} A ${RA} ${RA} 0 0 ${sw(1)} ${X(rx)} ${ry} Z`,
+    };
+  };
+  const L = side(-1);
+  const Rt = side(1);
   return {
-    paint: paintRect,
-    mid: `M ${-CX} ${B} H ${CX} V ${by} A ${R} ${R} 0 0 1 ${-CX} ${by} Z ${paintRect}`,
-    corner3: `M ${-W} ${B} H ${-CX} V ${by} H ${-W} Z M ${CX} ${B} H ${W} V ${by} H ${CX} Z`,
-    wing3:
-      `M ${CX} ${by} H ${W} V ${H} H ${hx} L ${ax} ${ay} A ${R} ${R} 0 0 0 ${CX} ${by} Z ` +
-      `M ${-CX} ${by} H ${-W} V ${H} H ${-hx} L ${-ax} ${ay} A ${R} ${R} 0 0 1 ${-CX} ${by} Z`,
+    leftCorner3: L.Corner3,
+    leftWing3: L.Wing3,
     top3: `M ${ax} ${ay} L ${hx} ${H} H ${-hx} L ${-ax} ${ay} A ${R} ${R} 0 0 0 ${ax} ${ay} Z`,
+    rightWing3: Rt.Wing3,
+    rightCorner3: Rt.Corner3,
+    leftBaseline: L.Baseline,
+    leftElbow: L.Elbow,
+    straightaway: `M ${-fx} ${PT} H ${fx} L ${ax} ${ay} A ${R} ${R} 0 0 1 ${-ax} ${ay} Z`,
+    rightElbow: Rt.Elbow,
+    rightBaseline: Rt.Baseline,
+    restricted: `M 0 ${-RA} A ${RA} ${RA} 0 1 1 0 ${RA} A ${RA} ${RA} 0 1 1 0 ${-RA} Z`,
+    leftShort: L.Short,
+    shortCenter: `M ${rx} ${ry} L ${fx} ${PT} H ${-fx} L ${-rx} ${ry} A ${RA} ${RA} 0 0 0 ${rx} ${ry} Z`,
+    rightShort: Rt.Short,
   };
 }
 
@@ -1438,18 +1517,21 @@ export function createCourt(container) {
       'data-tone': 'empty',
     });
     zonesG.append(zoneEls[zone]);
-    labelEls[zone] = LABEL_ANCHORS[zone].map(({ x, y, rotate }) => {
-      const text = el('text', {
-        x,
-        y,
-        'font-size': zone === 'corner3' ? 0.4 : 0.5,
-        'text-anchor': 'middle',
-        'dominant-baseline': 'middle',
-        transform: rotate ? `rotate(${rotate} ${x} ${y})` : '',
-      });
-      labelsG.append(text);
-      return text;
+    const { x, y, rotate } = LABEL_ANCHORS[zone];
+    const narrow = rotate !== undefined; // corner strips: smaller type
+    const text = el('text', {
+      x,
+      y,
+      'data-zone': zone,
+      'text-anchor': 'middle',
+      'dominant-baseline': 'middle',
+      transform: rotate ? `rotate(${rotate} ${x} ${y})` : '',
     });
+    const pct = el('tspan', { x, dy: -0.18, class: 'pct', 'font-size': narrow ? 0.4 : 0.5 });
+    const count = el('tspan', { x, dy: narrow ? 0.42 : 0.5, class: 'count', 'font-size': narrow ? 0.3 : 0.38 });
+    text.append(pct, count);
+    labelsG.append(text);
+    labelEls[zone] = { pct, count };
   }
 
   for (const d of courtLinePaths()) linesG.append(el('path', { d }));
@@ -1469,7 +1551,9 @@ export function createCourt(container) {
         const { tone, lowConfidence } = zoneTone(zone, stats[zone]);
         zoneEls[zone].setAttribute('data-tone', tone);
         zoneEls[zone].toggleAttribute('data-low', lowConfidence);
-        for (const t of labelEls[zone]) t.textContent = formatStat(stats[zone]);
+        const { pct, count } = zoneLabel(stats[zone]);
+        labelEls[zone].pct.textContent = pct;
+        labelEls[zone].count.textContent = count;
       }
     },
     setDots(shots) {

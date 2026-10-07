@@ -56,6 +56,16 @@ describe('load', () => {
     expect(storage.map.get(CORRUPT_PREFIX + T0)).toBe(raw);
   });
 
+  // Final review: without persisting the fresh state, every reload re-backed-up the
+  // same corrupt blob (new key each time) and re-showed the banner.
+  it('backs up corrupt data only once across reloads', () => {
+    const storage = memoryStorage({ [STORAGE_KEY]: '{bad' });
+    expect(load(storage, T0).warning).toBe('corrupt');
+    expect(load(storage, T0 + 1).warning).toBeNull();
+    const backups = [...storage.map.keys()].filter((k) => k.startsWith(CORRUPT_PREFIX));
+    expect(backups).toEqual([CORRUPT_PREFIX + T0]);
+  });
+
   it('still recovers when the backup write itself fails', () => {
     const storage = memoryStorage({ [STORAGE_KEY]: '{bad' }, { throwOnSet: true });
     expect(load(storage, T0).warning).toBe('corrupt');

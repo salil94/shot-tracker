@@ -57,12 +57,15 @@ export function load(storage, now = Date.now()) {
     if (!isValidState(data)) throw new Error('Invalid saved state');
     return { state: normalize(data), warning: null };
   } catch {
+    const state = createState(now);
     try {
       storage.setItem(CORRUPT_PREFIX + now, raw);
+      // Only replace the corrupt data once it is safely backed up.
+      save(storage, state);
     } catch {
       // Backup is best-effort; the app must still start.
     }
-    return { state: createState(now), warning: 'corrupt' };
+    return { state, warning: 'corrupt' };
   }
 }
 

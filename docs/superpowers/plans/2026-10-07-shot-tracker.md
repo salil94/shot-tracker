@@ -364,13 +364,14 @@ git commit -m "feat: project setup and FIBA court zone classification"
 
 **Interfaces:**
 - Consumes: `ZONES` from `src/court/geometry.js`
-- Produces: `pct(made, attempts): number|null` (integer percent), `zoneStats(shots): { [zone]: { made, attempts, pct } }` (always has all 5 zones), `totals(shots): { made, attempts, pct }`, `formatStat({ made, attempts, pct }): string`. A shot is `{ x, y, made: boolean, zone, t }`.
+- Produces: `pct(made, attempts): number|null` (integer percent), `zoneStats(shots): { [zone]: { made, attempts, pct } }` (always has all 14 zones, in `ZONES` order), `totals(shots): { made, attempts, pct }`, `formatStat({ made, attempts, pct }): string`. A shot is `{ x, y, made: boolean, zone, t }`.
 
 - [ ] **Step 1: Write the failing test** — `tests/stats.test.js`
 
 ```js
 import { describe, it, expect } from 'vitest';
 import { pct, zoneStats, totals, formatStat } from '../src/stats.js';
+import { ZONES } from '../src/court/geometry.js';
 
 const shot = (zone, made) => ({ x: 0, y: 0, zone, made, t: 0 });
 
@@ -384,33 +385,40 @@ describe('pct', () => {
 });
 
 describe('zoneStats', () => {
-  it('returns every zone empty for no shots', () => {
+  it('returns all 14 zones empty for no shots', () => {
     const s = zoneStats([]);
-    expect(Object.keys(s)).toEqual(['paint', 'mid', 'corner3', 'wing3', 'top3']);
+    expect(Object.keys(s)).toEqual(ZONES);
+    expect(Object.keys(s)).toHaveLength(14);
     for (const z of Object.values(s)) expect(z).toEqual({ made: 0, attempts: 0, pct: null });
   });
 
   it('counts makes and attempts per zone', () => {
     const s = zoneStats([
-      shot('paint', true),
-      shot('paint', false),
-      shot('paint', true),
+      shot('restricted', true),
+      shot('restricted', false),
+      shot('restricted', true),
       shot('top3', true),
     ]);
-    expect(s.paint).toEqual({ made: 2, attempts: 3, pct: 67 });
+    expect(s.restricted).toEqual({ made: 2, attempts: 3, pct: 67 });
     expect(s.top3).toEqual({ made: 1, attempts: 1, pct: 100 });
-    expect(s.mid).toEqual({ made: 0, attempts: 0, pct: null });
+    expect(s.straightaway).toEqual({ made: 0, attempts: 0, pct: null });
   });
 
-  it('ignores shots with an unknown zone', () => {
-    const s = zoneStats([shot('bogus', true)]);
+  it('keeps left and right zones separate', () => {
+    const s = zoneStats([shot('leftCorner3', true), shot('rightCorner3', false), shot('rightCorner3', false)]);
+    expect(s.leftCorner3).toEqual({ made: 1, attempts: 1, pct: 100 });
+    expect(s.rightCorner3).toEqual({ made: 0, attempts: 2, pct: 0 });
+  });
+
+  it('ignores shots with an unknown zone, including the old combined ids', () => {
+    const s = zoneStats([shot('bogus', true), shot('corner3', true), shot('paint', true)]);
     expect(Object.values(s).every((z) => z.attempts === 0)).toBe(true);
   });
 });
 
 describe('totals', () => {
   it('sums across all zones', () => {
-    expect(totals([shot('paint', true), shot('wing3', false)])).toEqual({ made: 1, attempts: 2, pct: 50 });
+    expect(totals([shot('restricted', true), shot('leftWing3', false)])).toEqual({ made: 1, attempts: 2, pct: 50 });
     expect(totals([])).toEqual({ made: 0, attempts: 0, pct: null });
   });
 });

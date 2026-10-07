@@ -67,6 +67,17 @@ describe('createCourt', () => {
     expect(court.svg.querySelector('pattern#no-data')).not.toBeNull();
   });
 
+  it('draws zone dividers from the zone geometry, above fills and below labels and marks', () => {
+    const layers = [...court.svg.children].map((n) => n.getAttribute('class') || n.tagName.toLowerCase());
+    expect(layers.indexOf('dividers')).toBeGreaterThan(layers.indexOf('zones'));
+    expect(layers.indexOf('dividers')).toBeLessThan(layers.indexOf('labels'));
+    expect(layers.indexOf('dividers')).toBeLessThan(layers.indexOf('dots'));
+    const all = Object.values(zonePaths()).join(' ');
+    const strokes = court.svg.querySelectorAll('.dividers path');
+    expect([...strokes].map((p) => p.getAttribute('class'))).toEqual(['shade', 'line']);
+    for (const p of strokes) expect(p.getAttribute('d')).toBe(all);
+  });
+
   it('tags each zone with its own tone, confidence and label', () => {
     court.setZones(
       zoneStats([

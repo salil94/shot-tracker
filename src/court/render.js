@@ -176,7 +176,13 @@ export function createCourt(container) {
     el('circle', { cx: 0, cy: 0, r: COURT.rimRadius }),
   );
 
-  svg.append(defs, zonesG, linesG, labelsG, dotsG, ghost);
+  // 2K-style dividers: every zone outline stroked from the same paths the fills use,
+  // a soft shade under a thin light line so they read on pale and dark tones alike.
+  const outlines = ZONES.map((z) => paths[z]).join(' ');
+  const dividersG = el('g', { class: 'dividers' });
+  dividersG.append(el('path', { d: outlines, class: 'shade' }), el('path', { d: outlines, class: 'line' }));
+
+  svg.append(defs, zonesG, dividersG, linesG, labelsG, dotsG, ghost);
   container.append(svg);
 
   return {

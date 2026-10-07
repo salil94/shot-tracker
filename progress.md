@@ -25,7 +25,8 @@
 
 ### Phase 2: State & Persistence
 
-- **Status:** pending
+- **Status:** in_progress
+- Task 4 complete: state.js (pure session ops). Tests: 9/9.
 
 ### Phase 3: UI
 
@@ -42,6 +43,7 @@
 | geometry.test.js | Task 1 | pass | 26/26 | pass |
 | stats.test.js | Task 2 | pass | 7/7 | pass |
 | heatmap.test.js | Task 3 | pass | 9/9 | pass |
+| state.test.js | Task 4 | pass | 9/9 | pass |
 
 ## Error Log
 

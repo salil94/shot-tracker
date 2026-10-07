@@ -27,6 +27,7 @@
 
 - **Status:** in_progress
 - Task 4 complete: state.js (pure session ops). Tests: 9/9.
+- Task 5 complete: store.js (load/save, corrupt backup, storage-unavailable fallback). Tests: 16/16.
 
 ### Phase 3: UI
 
@@ -44,6 +45,7 @@
 | stats.test.js | Task 2 | pass | 7/7 | pass |
 | heatmap.test.js | Task 3 | pass | 9/9 | pass |
 | state.test.js | Task 4 | pass | 9/9 | pass |
+| store.test.js | Task 5 | pass | 16/16 | pass |
 
 ## Error Log
 
